@@ -1,0 +1,631 @@
+---
+title: "descriptive data analysis"
+author: "Katharina Mattonet"
+date: "13 5 2019"
+output:
+  word_document: default
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## set up enviornment
+```{r libraries}
+#library(limma)
+#library(RnBeads)
+library(dplyr)
+library(car)
+library(psych)
+library(nortest)
+#source("https://bioconductor.org/biocLite.R")
+#biocLite("limma")
+#biocLite("RnBeads")
+#library(SummarizedExperiment)
+#library(minfi)
+```
+
+## load data
+```{r load data}
+#bVal <- load("/Volumes/KATHAARBEIT/bVal_noNA_RnB.RData") # preprocessed bvalues without missing values but including CpGs on sex chromosomes as matrix
+#bVal <- bVals_noNA_df
+#MVal <- load("/Volumes/KATHAARBEIT/MVal_noNA_RnB.RData")
+
+Alter_M_K <- read.delim2("E:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Skript/Alter_M_K.txt")
+Blut_Dioxin_PCB <- read.delim2("E:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Skript/Blut_Dioxin_PCB.txt")
+dbo_BerAusw_Gew_Gro_BMI <- read.delim2("E:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Skript/dbo_BerAusw_Gew_Gro_BMI.txt")
+EPICLaufnr_VpNr_Kodierung <- read.delim2("E:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Skript/EPICLaufnr_VpNr_Kodierung.txt", dec = ",")
+proportions_medecom1 <- read.delim("E:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Skript/proportions_medecom1.txt")
+Annotation_Schadstoffstudie_EPIC <- read.csv("E:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Skript/Annotation_Schadstoffstudie_EPIC.csv", sep=";", dec = ",")
+dbo_U1_fb2 <- read.delim2("E:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Skript/dbo_U1_fb2.txt", comment.char="#")
+
+#data_frame$variable <- as.numeric(gsub(",", ".", gsub("\\.", "", data_frame$variable))) #convert decimal seperator from "," to "."
+
+```
+
+## create data.frame with EDCs and phenotype-covariates: sex_n, age_m, age_gast, BMI_m, Gew_n, Gro_n, BMI_n, smoke_m, sentrix_position
+```{r create data.frames, echo=FALSE}
+df_sex_age <- data.frame(Alter_M_K$StdNr, Alter_M_K$Sex_Kind, Alter_M_K$AlterM_zur_Geburt)
+colnames(df_sex_age) <- c("B_StdNr", "sex_n", "age_m")
+
+df_edc <- data.frame(Blut_Dioxin_PCB$B_StdNr, Blut_Dioxin_PCB$B_GTE05_1L)
+colnames(df_edc) <- c("B_StdNr", "EDCs")
+df_edc_sex_age <- left_join(df_edc, df_sex_age)
+
+df_bmi <- data.frame(dbo_BerAusw_Gew_Gro_BMI$StdNr, dbo_BerAusw_Gew_Gro_BMI$U1_GebGew_k, dbo_BerAusw_Gew_Gro_BMI$U1_GebGro_k, dbo_BerAusw_Gew_Gro_BMI$U1_GebBMI_k)
+colnames(df_bmi) <- c("B_StdNr", "weight_n", "height_n", "BMI_n")
+
+df_edc_sex_age_bmi <- left_join(df_edc_sex_age, df_bmi)
+
+df_smoke_bmim_alc_gast <- data.frame(dbo_U1_fb2$StdNr, dbo_U1_fb2$X7_2_RWaehr, dbo_U1_fb2$X2_2_GewVor, dbo_U1_fb2$X1_3_Gro, dbo_U1_fb2$X8_2_AlkInSchw, dbo_U1_fb2$X2_1_SchwDauer) #Rauchen_Mutter während Schwangerschaft, Gewicht_Mutter vor Schwangerschaft, Größer_Mutter zu U1, Alkoholkonsum_Mutter während Schwangerschaft
+colnames(df_smoke_bmim_alc_gast) <- c("B_StdNr", "smoke_m", "weight_m", "height_m", "alc_m", "dur_gast")
+
+df_edc_sex_age_bmi_smoke_bmim_alc_gast <- left_join(df_edc_sex_age_bmi, df_smoke_bmim_alc_gast)
+
+colnames(EPICLaufnr_VpNr_Kodierung) <- c("D_StdNr", "B_StdNr") # match with sample nr of DNAm data: D_StdNr = DNAm sample nr, B_StdNr = EDCs and phenotyp sample nr
+EPICLaufnr_VpNr_Kodierung <- EPICLaufnr_VpNr_Kodierung[,c(2,1)]
+df_Bstdnr_edc_sex_age_bmi_smoke_bmim_alc_gast <- left_join(EPICLaufnr_VpNr_Kodierung, df_edc_sex_age_bmi_smoke_bmim_alc_gast)
+df_Dstdnr_Bstdnr_edc_sex_age_bmi_smoke_bmim_alc_gast <- df_Bstdnr_edc_sex_age_bmi_smoke_bmim_alc_gast[,c(2,1,3:13)]
+
+df_sentrix <- data.frame(Annotation_Schadstoffstudie_EPIC$Sample_Name, Annotation_Schadstoffstudie_EPIC$SentrixPosition_A)
+colnames(df_sentrix) <- c("D_StdNr", "sentrix_position")
+
+df_Dstdnr_Bstdnr_edc_sex_age_bmi_smoke__bmim_alc_gast_sentrix <- left_join(df_Dstdnr_Bstdnr_edc_sex_age_bmi_smoke_bmim_alc_gast, df_sentrix)
+
+df_Dstdnr_Bstdnr_edc_sex_age_bmi_smoke__bmim_alc_gast_sentrix_n25 <- df_Dstdnr_Bstdnr_edc_sex_age_bmi_smoke__bmim_alc_gast_sentrix[ !(df_Dstdnr_Bstdnr_edc_sex_age_bmi_smoke__bmim_alc_gast_sentrix$D_StdNr %in% c(25, 165:170)), ]
+
+prop_t <- t(proportions_medecom1) # transporn columns to rows and rows to columns
+prop_d <- as.data.frame(prop_t) # convert atomic vector to dataframe
+prop_d$D_StdNr <- c(1:24, 26:44, 46:164) # creat new variable for sample nr according to DNAm sample nr
+prop_d <- prop_d[, c(9, 1:8)]
+all_data <- left_join(df_Dstdnr_Bstdnr_edc_sex_age_bmi_smoke__bmim_alc_gast_sentrix_n25, prop_d) # match by "D_StdNr"
+all_data$smoke_m <- as.numeric(all_data$smoke_m)
+all_data$smoke_m_r <- recode(all_data$smoke_m, "c(1,2,3,4) = '1'; ", as.factor = FALSE, as.numeric = TRUE) #all_data$smoke_m_r Variablenkodierung: 0 = Nichtraucherin, 1 = Raucherin bei Schwangerschaft
+#all_data$sex_n <- recode(all_data$sex_n, "2 = '0'; ", as.factor = FALSE, as.numeric = TRUE) # change coding form 2 to 0
+all_data$BMI_m <- all_data$weight_m / ((all_data$height_m/100)^2) #BMI_Mutter vor Schwangerschaft
+all_data$weight_n_kg <- all_data$weight_n/1000
+```
+
+## explore data & remove samples with too many NAs 
+```{r explore data}
+## missing values in all_data
+which(is.na(all_data$EDCs)) # D_StdNr: 77, 80, 127, 160 (Row#: 75  78 125 158)
+which(is.na(all_data$sex_n)) # D_StdNr: 162 (row#: 160)
+which(is.na(all_data$age_m)) # D_StdNr: 162 (row#: 160)
+which(is.na(all_data$dur_gast)) # D_StdNr: 162 (row#: 160)
+which(is.na(all_data$weight_n)) # D_StdNr: 162 (row#: 160)
+which(is.na(all_data$height_n)) # D_StdNr: 162 (row#: 160)
+which(is.na(all_data$BMI_n)) # D_StdNr: 162 (row#: 160)
+which(is.na(all_data$smoke_m_r)) # D_StdNr: 162 (row#: 160)
+which(is.na(all_data$BMI_m)) # D_StdNr: 162 (row#: 160)
+which(is.na(all_data$alc_m)) #D_StdNr: 21, 43, 48, 69, 134, 162 (row#: 21  44  50  67  69 132 160)
+
+# remove samples with NA and variable alc_m
+final_data <- all_data[ !(all_data$D_StdNr %in% 162), ] # removed due to too many varialbe with NAs
+## exclude participants with NAs on EDCs
+final_data2 <- final_data[ !(final_data$D_StdNr %in% c(77, 80, 127, 160)), ]
+```
+
+## descriptive statistics EDCs
+```{r EDCs}
+describe(final_data$EDCs, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$EDCs, na.rm = TRUE)
+geometric.mean(final_data$EDCs)
+quantile(final_data$EDCs, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$EDCs, xlab =  "WHO2005-TEq PCDD/F + PCB", main = "Distribution of WHO2005-TEq PCDD/F + PCB")
+boxplot(final_data$EDCs, main ="Boxplot WHO2005-TEq PCDD/F + PCB", ylab = "WHO2005-TEq PCDD/F + PCB")
+
+```
+
+## descriptive staistics sex of the neonate
+```{r sex}
+table(final_data$sex_n)
+prop.table(table(final_data$sex_n))
+barplot(table(final_data$sex_n), names = c("boys", "girls"), ylim = c(0 , 90))
+```
+## descriptive statistics mother's age
+```{r mothers age}
+describe(final_data$age_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$age_m, na.rm = TRUE)
+geometric.mean(final_data$age_m)
+quantile(final_data$age_m, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$age_m, xlab =  "mother's age in years", main = "Distribution of mother's age")
+boxplot(final_data$age_m, main ="Boxplot mother's age", ylab = "mother's age in years")
+```
+
+## descriptive statistics of mother's weight
+```{r mothers weight}
+describe(final_data$weight_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$weight_m, na.rm = TRUE)
+geometric.mean(final_data$weight_m)
+quantile(final_data$weight_m, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$weight_m, xlab =  "mother's weight in kg", main = "Distribution of mother's weight before pregnancy")
+boxplot(final_data$weight_m, main ="Boxplot mother's weight before the pregnancy", ylab = "mother's weight in kg")
+```
+## descriptive statistics of mother's height
+```{r mothers height}
+describe(final_data$height_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$height_m, na.rm = TRUE)
+geometric.mean(final_data$height_m)
+quantile(final_data$height_m, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$height_m, xlab =  "mother's height in cm", main = "Distribution of mother's height")
+boxplot(final_data$height_m, main ="Boxplot mother's height", ylab = "mother's height in cm")
+```
+
+## descriptive statistics of mother's BMI
+```{r mothers BMI}
+describe(final_data$BMI_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$BMI_m, na.rm = TRUE)
+geometric.mean(final_data$BMI_m)
+quantile(final_data$BMI_m, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$BMI_m, xlab =  "mother's BMI", main = "Distribution of mother's BMI before pregnancy")
+boxplot(final_data$BMI_m, main ="Boxplot mother's BMI before pregnancy", ylab = "mother's BMI")
+```
+
+## descriptive statistics of mother's smoking status
+```{r smoking}
+table(final_data$smoke_m_r)
+prop.table(table(final_data$smoke_m_r))
+barplot(table(final_data$smoke_m_r), names = c("no smoking", "smoking"), ylim = c(0 , 120), main ="smoking during pregnancy")
+```
+
+## descriptive statistics of mother's alcohol consumption
+```{r alcohol}
+table(final_data$alc_m)
+prop.table(table(final_data$alc_m))
+barplot(table(final_data$alc_m), names = c("no alcohol consumption", "alcohol consumption"), ylim = c(0 , 140), main ="alcohol consumption during pregnancy")
+```
+
+## descriptive statistics of gestation length
+```{r gestation length}
+describe(final_data$dur_gast, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$dur_gast, na.rm = TRUE)
+geometric.mean(final_data$dur_gast)
+quantile(final_data$dur_gast, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$dur_gast, xlab =  "gestation length in weeks", main = "Distribution of gestation length")
+boxplot(final_data$dur_gast, main ="Boxplot gestation length", ylab = "gestation length in weeks")
+```
+
+## descriptive statistics of neonate's weight
+```{r neonates weight}
+describe(final_data$weight_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$weight_n, na.rm = TRUE)
+geometric.mean(final_data$weight_n)
+quantile(final_data$weight_n, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$weight_n, xlab =  "neonate's weight in g", main = "Distribution of neonate's weight")
+boxplot(final_data$weight_n, main ="Boxplot neonate's weight", ylab = "neonate's weight in g")
+```
+
+## descriptive statistics of neonate's height
+```{r neonates height}
+describe(final_data$height_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$height_n, na.rm = TRUE)
+geometric.mean(final_data$height_n)
+quantile(final_data$height_n, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$height_n, xlab =  "neonate's height in cm", main = "Distribution of neonate's height")
+boxplot(final_data$height_n, main ="Boxplot neonate's height", ylab = "neonate's height in cm")
+```
+
+## descriptive data of neonate's BMI
+```{r neonates BMI}
+describe(final_data$BMI_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$BMI_n, na.rm = TRUE)
+geometric.mean(final_data$BMI_n)
+quantile(final_data$BMI_n, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$BMI_n, xlab =  "neonate's BMI", main = "Distribution of neonate's BMI")
+boxplot(final_data$BMI_n, main ="Boxplot neonate's BMI", ylab = "neonate's BMI")
+```
+
+## descriptive data of LMC1
+```{r LMC 1}
+describe(final_data$LMC1, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$LMC1, na.rm = TRUE)
+geometric.mean(final_data$LMC1)
+quantile(final_data$LMC1, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$LMC1, main = "LMC 1")
+boxplot(final_data$LMC1, main ="Boxplot LMC 1")
+```
+## descriptive data of LMC2
+```{r LMC 2}
+describe(final_data$LMC2, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$LMC2, na.rm = TRUE)
+geometric.mean(final_data$LMC2)
+quantile(final_data$LMC2, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$LMC2, main = "LMC 2")
+boxplot(final_data$LMC2, main ="Boxplot LMC 2")
+```
+## descriptive data of LMC3
+```{r LMC 3}
+describe(final_data$LMC3, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$LMC3, na.rm = TRUE)
+geometric.mean(final_data$LMC3)
+quantile(final_data$LMC3, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$LMC3, main = "LMC 3")
+boxplot(final_data$LMC3, main ="Boxplot LMC 3")
+```
+## descriptive data of LMC4
+```{r LMC 4}
+describe(final_data$LMC4, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$LMC4, na.rm = TRUE)
+geometric.mean(final_data$LMC4)
+quantile(final_data$LMC4, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$LMC4, main = "LMC 4")
+boxplot(final_data$LMC4, main ="Boxplot LMC 4")
+```
+## descriptive data of LMC5
+```{r LMC 5}
+describe(final_data$LMC5, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$LMC5, na.rm = TRUE)
+geometric.mean(final_data$LMC5)
+quantile(final_data$LMC5, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$LMC5, main = "LMC 5")
+boxplot(final_data$LMC5, main ="Boxplot LMC 5")
+```
+## descriptive data of LMC6
+```{r LMC 6}
+describe(final_data$LMC6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$LMC6, na.rm = TRUE)
+geometric.mean(final_data$LMC6)
+quantile(final_data$LMC6, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$LMC6, main = "LMC 6")
+boxplot(final_data$LMC6, main ="Boxplot LMC 6")
+```
+## descriptive data of LMC7
+```{r LMC 7}
+describe(final_data$LMC7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$LMC7, na.rm = TRUE)
+geometric.mean(final_data$LMC7)
+quantile(final_data$LMC7, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$LMC7, main = "LMC 7")
+boxplot(final_data$LMC7, main ="Boxplot LMC 7")
+```
+## descriptive data of LMC8
+```{r LMC 8}
+describe(final_data$LMC8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data$LMC8, na.rm = TRUE)
+geometric.mean(final_data$LMC8)
+quantile(final_data$LMC8, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data$LMC8, main = "LMC 8")
+boxplot(final_data$LMC8, main ="Boxplot LMC 8")
+```
+
+## descriptive statistics EDCs with exclusions
+```{r EDCs with exclusions}
+describe(final_data2$EDCs, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$EDCs, na.rm = TRUE)
+geometric.mean(final_data2$EDCs)
+quantile(final_data2$EDCs, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$EDCs, xlab =  "WHO2005-TEq PCDD/F + PCB", main = "Distribution of WHO2005-TEq PCDD/F + PCB")
+Boxplot(final_data2$EDCs, main ="Boxplot WHO2005-TEq PCDD/F + PCB", ylab = "WHO2005-TEq PCDD/F + PCB")
+
+```
+
+## descriptive staistics sex of the neonate with exclusions
+```{r sex with exclusions}
+table(final_data2$sex_n)
+prop.table(table(final_data2$sex_n))
+barplot(table(final_data2$sex_n), names = c("boys", "girls"), ylim = c(0 , 90))
+```
+## descriptive statistics mother's age with exclusions
+```{r mothers age with exclusions}
+describe(final_data2$age_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$age_m, na.rm = TRUE)
+geometric.mean(final_data2$age_m)
+quantile(final_data2$age_m, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$age_m, xlab =  "mother's age in years", main = "Distribution of mother's age")
+Boxplot(final_data2$age_m, main ="Boxplot mother's age", ylab = "mother's age in years")
+```
+
+## descriptive statistics of mother's weight with exclusions
+```{r mothers weight with exclusions}
+describe(final_data2$weight_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$weight_m, na.rm = TRUE)
+geometric.mean(final_data2$weight_m)
+quantile(final_data2$weight_m, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$weight_m, xlab =  "mother's weight in kg", main = "Distribution of mother's weight before pregnancy")
+Boxplot(final_data2$weight_m, main ="Boxplot mother's weight before the pregnancy", ylab = "mother's weight in kg")
+```
+## descriptive statistics of mother's height with exclusions
+```{r mothers height with exclusions}
+describe(final_data2$height_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$height_m, na.rm = TRUE)
+geometric.mean(final_data2$height_m)
+quantile(final_data2$height_m, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$height_m, xlab =  "mother's height in cm", main = "Distribution of mother's height")
+Boxplot(final_data2$height_m, main ="Boxplot mother's height", ylab = "mother's height in cm")
+```
+
+## descriptive statistics of mother's BMI with exclusions
+```{r mothers BMI with exclusions}
+describe(final_data2$BMI_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$BMI_m, na.rm = TRUE)
+geometric.mean(final_data2$BMI_m)
+quantile(final_data2$BMI_m, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$BMI_m, xlab =  "mother's BMI", main = "Distribution of mother's BMI before pregnancy")
+Boxplot(final_data2$BMI_m, main ="Boxplot mother's BMI before pregnancy", ylab = "mother's BMI")
+```
+
+## descriptive statistics of mother's smoking status with exclusions
+```{r smoking with exclusions}
+table(final_data2$smoke_m_r)
+prop.table(table(final_data2$smoke_m_r))
+barplot(table(final_data2$smoke_m_r), names = c("no smoking", "smoking"), ylim = c(0 , 120), main ="smoking during pregnancy")
+```
+
+## descriptive statistics of mother's alcohol consumption with exclusions
+```{r alcohol with exclusions}
+table(final_data2$alc_m)
+prop.table(table(final_data2$alc_m))
+barplot(table(final_data2$alc_m), names = c("no alcohol consumption", "alcohol consumption"), ylim = c(0 , 140), main ="alcohol consumption during pregnancy")
+```
+
+## descriptive statistics of gestation length with exclusions
+```{r gestation length with exclusions}
+describe(final_data2$dur_gast, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$dur_gast, na.rm = TRUE)
+geometric.mean(final_data2$dur_gast)
+quantile(final_data2$dur_gast, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$dur_gast, xlab =  "gestation length in weeks", main = "Distribution of gestation length")
+Boxplot(final_data2$dur_gast, main ="Boxplot gestation length", ylab = "gestation length in weeks")
+```
+
+## descriptive statistics of neonate's weight with exclusions
+```{r neonates weight with exclusions}
+describe(final_data2$weight_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$weight_n, na.rm = TRUE)
+geometric.mean(final_data2$weight_n)
+quantile(final_data2$weight_n, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$weight_n, xlab =  "neonate's weight in g", main = "Distribution of neonate's weight")
+Boxplot(final_data2$weight_n, main ="Boxplot neonate's weight", ylab = "neonate's weight in g")
+```
+
+## descriptive statistics of neonate's height with exclusions
+```{r neonates height with exclusions}
+describe(final_data2$height_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$height_n, na.rm = TRUE)
+geometric.mean(final_data2$height_n)
+quantile(final_data2$height_n, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$height_n, xlab =  "neonate's height in cm", main = "Distribution of neonate's height")
+Boxplot(final_data2$height_n, main ="Boxplot neonate's height", ylab = "neonate's height in cm")
+```
+
+## descriptive data of neonate's BMI with exclusions
+```{r neonates BMI with exclusions}
+describe(final_data2$BMI_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$BMI_n, na.rm = TRUE)
+geometric.mean(final_data2$BMI_n)
+quantile(final_data2$BMI_n, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$BMI_n, xlab =  "neonate's BMI", main = "Distribution of neonate's BMI")
+Boxplot(final_data2$BMI_n, main ="Boxplot neonate's BMI", ylab = "neonate's BMI")
+```
+
+## descriptive data of LMC1 with exclusions
+```{r LMC 1 with exclusions}
+describe(final_data2$LMC1, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$LMC1, na.rm = TRUE)
+geometric.mean(final_data2$LMC1)
+quantile(final_data2$LMC1, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$LMC1, main = "LMC 1")
+boxplot(final_data2$LMC1, main ="Boxplot LMC 1")
+```
+## descriptive data of LMC2 with exclusions
+```{r LMC 2 with exclusions}
+describe(final_data2$LMC2, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$LMC2, na.rm = TRUE)
+geometric.mean(final_data2$LMC2)
+quantile(final_data2$LMC2, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$LMC2, main = "LMC 2")
+boxplot(final_data2$LMC2, main ="Boxplot LMC 2")
+```
+## descriptive data of LMC3 with exclusions
+```{r LMC 3 with exclusions}
+describe(final_data2$LMC3, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$LMC3, na.rm = TRUE)
+geometric.mean(final_data2$LMC3)
+quantile(final_data2$LMC3, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$LMC3, main = "LMC 3")
+boxplot(final_data2$LMC3, main ="Boxplot LMC 3")
+```
+## descriptive data of LMC4 with exclusions
+```{r LMC 4 with exclusions}
+describe(final_data2$LMC4, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$LMC4, na.rm = TRUE)
+geometric.mean(final_data2$LMC4)
+quantile(final_data2$LMC4, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$LMC4, main = "LMC 4")
+boxplot(final_data2$LMC4, main ="Boxplot LMC 4")
+```
+## descriptive data of LMC5 with exclusions
+```{r LMC 5 with exclusions}
+describe(final_data2$LMC5, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$LMC5, na.rm = TRUE)
+geometric.mean(final_data2$LMC5)
+quantile(final_data2$LMC5, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$LMC5, main = "LMC 5")
+boxplot(final_data2$LMC5, main ="Boxplot LMC 5")
+```
+## descriptive data of LMC6 with exclusions
+```{r LMC 6 with exclusions}
+describe(final_data2$LMC6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$LMC6, na.rm = TRUE)
+geometric.mean(final_data2$LMC6)
+quantile(final_data2$LMC6, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$LMC6, main = "LMC 6")
+boxplot(final_data2$LMC6, main ="Boxplot LMC 6")
+```
+## descriptive data of LMC7 with exclusions
+```{r LMC 7 with exclusions}
+describe(final_data2$LMC7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$LMC7, na.rm = TRUE)
+geometric.mean(final_data2$LMC7)
+quantile(final_data2$LMC7, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$LMC7, main = "LMC 7")
+boxplot(final_data2$LMC7, main ="Boxplot LMC 7")
+```
+## descriptive data of LMC8 with exclusions
+```{r LMC 8 with exclusions}
+describe(final_data2$LMC8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(final_data2$LMC8, na.rm = TRUE)
+geometric.mean(final_data2$LMC8)
+quantile(final_data2$LMC8, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(final_data2$LMC8, main = "LMC 8")
+boxplot(final_data2$LMC8, main ="Boxplot LMC 8")
+```
+## subset sexes
+```{r}
+girls <- subset(final_data2, final_data2$sex_n == 2)
+boys <- subset(final_data2, final_data2$sex_n == 1)
+```
+
+
+## descriptive data LMC1 with exclusions, sexes seperately
+```{r LMC1 sexes}
+describe(boys$LMC1, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$LMC1, na.rm = TRUE)
+geometric.mean(boys$LMC1)
+quantile(boys$LMC1, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(boys$LMC1, main = "LMC 1")
+
+describe(girls$LMC1, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$LMC1, na.rm = TRUE)
+geometric.mean(girls$LMC1)
+quantile(girls$LMC1, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(girls$LMC1, main = "LMC 1")
+
+boxplot(final_data2$LMC1 ~ final_data2$sex_n, main ="Boxplot LMC 1", xlab = "sex")
+
+```
+## descriptive data LMC2 with exclusions, sexes seperately
+```{r LMC2 sexes}
+describe(boys$LMC2, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$LMC2, na.rm = TRUE)
+geometric.mean(boys$LMC2)
+quantile(boys$LMC2, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(boys$LMC2, main = "LMC 2")
+
+describe(girls$LMC2, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$LMC2, na.rm = TRUE)
+geometric.mean(girls$LMC2)
+quantile(girls$LMC2, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(girls$LMC2, main = "LMC 2")
+
+boxplot(final_data2$LMC2 ~ final_data2$sex_n, main ="Boxplot LMC 2", xlab = "sex")
+
+```
+## descriptive data LMC3 with exclusions, sexes seperately
+```{r LMC3 sexes}
+describe(boys$LMC3, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$LMC3, na.rm = TRUE)
+geometric.mean(boys$LMC3)
+quantile(boys$LMC3, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(boys$LMC3, main = "LMC 3")
+
+describe(girls$LMC3, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$LMC3, na.rm = TRUE)
+geometric.mean(girls$LMC3)
+quantile(girls$LMC3, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(girls$LMC3, main = "LMC 3")
+
+boxplot(final_data2$LMC3 ~ final_data2$sex_n, main ="Boxplot LMC 3", xlab = "sex")
+
+```
+
+## descriptive data LMC4 with exclusions, sexes seperately
+```{r LMC4 sexes}
+describe(boys$LMC4, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$LMC4, na.rm = TRUE)
+geometric.mean(boys$LMC4)
+quantile(boys$LMC4, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(boys$LMC4, main = "LMC 4")
+
+describe(girls$LMC4, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$LMC4, na.rm = TRUE)
+geometric.mean(girls$LMC4)
+quantile(girls$LMC4, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(girls$LMC4, main = "LMC 4")
+
+boxplot(final_data2$LMC4 ~ final_data2$sex_n, main ="Boxplot LMC 4", xlab = "sex")
+
+```
+## descriptive data LMC5 with exclusions, sexes seperately
+```{r LMC5 sexes}
+describe(boys$LMC5, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$LMC5, na.rm = TRUE)
+geometric.mean(boys$LMC5)
+quantile(boys$LMC5, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(boys$LMC5, main = "LMC 5")
+
+describe(girls$LMC5, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$LMC5, na.rm = TRUE)
+geometric.mean(girls$LMC5)
+quantile(girls$LMC5, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(girls$LMC5, main = "LMC 5")
+
+boxplot(final_data2$LMC5 ~ final_data2$sex_n, main ="Boxplot LMC 5", xlab = "sex")
+
+```
+## descriptive data LMC6 with exclusions, sexes seperately
+```{r LMC6 sexes}
+describe(boys$LMC6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$LMC6, na.rm = TRUE)
+geometric.mean(boys$LMC6)
+quantile(boys$LMC6, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(boys$LMC6, main = "LMC 6")
+
+describe(girls$LMC6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$LMC6, na.rm = TRUE)
+geometric.mean(girls$LMC6)
+quantile(girls$LMC6, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(girls$LMC6, main = "LMC 6")
+
+boxplot(final_data2$LMC6 ~ final_data2$sex_n, main ="Boxplot LMC 6", xlab = "sex")
+
+```
+## descriptive data LMC7 with exclusions, sexes seperately
+```{r LMC7 sexes}
+describe(boys$LMC7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$LMC7, na.rm = TRUE)
+geometric.mean(boys$LMC7)
+quantile(boys$LMC7, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(boys$LMC7, main = "LMC 7")
+
+describe(girls$LMC7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$LMC7, na.rm = TRUE)
+geometric.mean(girls$LMC7)
+quantile(girls$LMC7, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(girls$LMC7, main = "LMC 7")
+
+boxplot(final_data2$LMC7 ~ final_data2$sex_n, main ="Boxplot LMC 7", xlab = "sex")
+
+```
+## descriptive data LMC8 with exclusions, sexes seperately
+```{r LMC8 sexes}
+describe(boys$LMC8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$LMC8, na.rm = TRUE)
+geometric.mean(boys$LMC8)
+quantile(boys$LMC8, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(boys$LMC8, main = "LMC 8")
+
+describe(girls$LMC8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$LMC8, na.rm = TRUE)
+geometric.mean(girls$LMC8)
+quantile(girls$LMC8, na.rm = TRUE, c(.05, .95)) # 5tes und 95tes Perzentil
+hist(girls$LMC8, main = "LMC 8")
+
+boxplot(final_data2$LMC8 ~ final_data2$sex_n, main ="Boxplot LMC 8", xlab = "sex")
+
+```
+## regression EDCs & weight of the neonate
+```{r EDCs weight}
+modell.EDCweight <- lm(final_data2$weight_n ~ final_data2$EDCs)
+summary(modell.EDCweight)
+plot(modell.EDCweight)
+
+```
+
