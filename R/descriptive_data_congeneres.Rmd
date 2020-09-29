@@ -1,0 +1,818 @@
+---
+title: "Descriptive Data congeneres"
+author: "Vanessa Vogel"
+date: "23 März 2020"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## set up environment
+```{r set up environment}
+setwd("F:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Einzelne Kongenere etc")
+library(dplyr)
+library(car)
+library(psych)
+library(nortest)
+library(apaTables)
+```
+
+##load data
+```{r load data}
+library(readr)
+PrePhaenotyp <- read_csv2("F:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Einzelne Kongenere etc/Phaenotyp.csv")
+PrePhaenotyp$smoke_m_r <- recode(PrePhaenotyp$smoke_m, "c(1,2,3,4) = '1'; ", as.factor = FALSE, as.numeric = TRUE) #Phaenotyp$smoke_m_r Variables: 0 = non-smoker, 1 = smoker during pregnancy
+Blut_Dioxin_PCB <- read.delim2("F:/Uni/Job/Backup/Vogel/06 Berechnungen/Deskriptive Daten/Einzelne Kongenere etc/Blut_Dioxin_PCB.txt")
+edc_lod <- data.frame(Blut_Dioxin_PCB$B_StdNr, Blut_Dioxin_PCB$B_P0771M, Blut_Dioxin_PCB$B_P0811M, Blut_Dioxin_PCB$B_P1261M, Blut_Dioxin_PCB$B_P1691M, Blut_Dioxin_PCB$B_P1051M, Blut_Dioxin_PCB$B_P1141M, Blut_Dioxin_PCB$B_P1181M, Blut_Dioxin_PCB$B_P1231M, Blut_Dioxin_PCB$B_P1561M, Blut_Dioxin_PCB$B_P1571M, Blut_Dioxin_PCB$B_P1671M, Blut_Dioxin_PCB$B_P1891M, Blut_Dioxin_PCB$B_P0281M, Blut_Dioxin_PCB$B_P0521M, Blut_Dioxin_PCB$B_P1011M, Blut_Dioxin_PCB$B_P1381M, Blut_Dioxin_PCB$B_P1531M, Blut_Dioxin_PCB$B_P1801M, Blut_Dioxin_PCB$B_D41_1M, Blut_Dioxin_PCB$B_D51_1M, Blut_Dioxin_PCB$B_D61_1M, Blut_Dioxin_PCB$B_D62_1M, Blut_Dioxin_PCB$B_D63_1M, Blut_Dioxin_PCB$B_D71_1M, Blut_Dioxin_PCB$B_D81_1M, Blut_Dioxin_PCB$B_F41_1M, Blut_Dioxin_PCB$B_F51_1M, Blut_Dioxin_PCB$B_F52_1M, Blut_Dioxin_PCB$B_F61_1M, Blut_Dioxin_PCB$B_F62_1M, Blut_Dioxin_PCB$B_F63_1M, Blut_Dioxin_PCB$B_F64_1M, Blut_Dioxin_PCB$B_F71_1M, Blut_Dioxin_PCB$B_F72_1M, Blut_Dioxin_PCB$B_F81_1M) # with half LOD (0.5 LOD), non-log transformed
+
+colnames(edc_lod) <- c("B_StdNr", "PCB77", "PCB81", "PCB126", "PCB169", "PCB105", "PCB114", "PCB118", "PCB123", "PCB156", "PCB157", "PCB167", "PCB189",  "PCB28", "PCB52", "PCB101", "PCB138", "PCB153", "PCB180", "PCDD48", "PCDD54", "PCDD66", "PCDD67", "PCDD70", "PCDD73", "PCDD75", "PCDF83", "PCDF94", "PCDF114", "PCDF118", "PCDF121", "PCDF130", "PCDF124", "PCDF131", "PCDF134", "PCDF135") 
+
+remove_congeners <- as.vector(c("PCB105", "PCB114", "PCB118", "PCB123", "PCB156", "PCB157", "PCB167", "PCB189", "PCB28", "PCB52", "PCB101", "PCB138", "PCB153", "PCB180", "PCDF83", "PCDF94", "PCDF124", "PCDF134", "PCDF135")) #taken out because more than 25% of subjects have values < or = 0.5 LOD
+
+edc_names <- colnames(edc_lod)
+EDC <- edc_lod[, !(edc_names %in% remove_congeners)]
+
+Phaenotyp <- merge(PrePhaenotyp, EDC, all.x = TRUE, by = "B_StdNr")
+```
+
+## descriptive statistics PCB77
+```{r PCB77}
+describe(Phaenotyp$PCB77, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCB77, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCB77)
+quantile(Phaenotyp$PCB77, na.rm = TRUE, c(.05, .95)) # 5th und 95th percentile
+hist(Phaenotyp$PCB77, xlab =  "PCB77", main = "Distribution of PCB77")
+boxplot(Phaenotyp$PCB77, main ="Boxplot PCB77", ylab = "PCB77")
+```
+
+## descriptive statistics PCB81
+```{r PCB81}
+describe(Phaenotyp$PCB81, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCB81, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCB81, na.rm = TRUE)
+quantile(Phaenotyp$PCB81, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCB81, xlab =  "PCB81", main = "Distribution of PCB81")
+boxplot(Phaenotyp$PCB81, main ="Boxplot PCB81", ylab = "PCB81")
+```
+
+## descriptive statistics PCB126
+```{r PCB126}
+describe(Phaenotyp$PCB126, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCB126, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCB126)
+quantile(Phaenotyp$PCB126, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCB126, xlab =  "PCB126", main = "Distribution of PCB126")
+boxplot(Phaenotyp$PCB126, main ="Boxplot PCB126", ylab = "PCB126")
+```
+
+## descriptive statistics PCB169
+```{r PCB169}
+describe(Phaenotyp$PCB169, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCB169, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCB169)
+quantile(Phaenotyp$PCB169, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCB169, xlab =  "PCB169", main = "Distribution of PCB169")
+boxplot(Phaenotyp$PCB169, main ="Boxplot PCB169", ylab = "PCB169")
+```
+
+## descriptive statistics PCDD48
+```{r PCDD48}
+describe(Phaenotyp$PCDD48, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDD48, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDD48)
+quantile(Phaenotyp$PCDD48, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDD48, xlab =  "PCDD48", main = "Distribution of PCDD48")
+boxplot(Phaenotyp$PCDD48, main ="Boxplot PCDD48", ylab = "PCDD48")
+```
+
+## descriptive statistics PCDD54
+```{r PCDD54}
+describe(Phaenotyp$PCDD54, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDD54, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDD54)
+quantile(Phaenotyp$PCDD54, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDD54, xlab =  "PCDD54", main = "Distribution of PCDD54")
+boxplot(Phaenotyp$PCDD54, main ="Boxplot PCDD54", ylab = "PCDD54")
+```
+
+## descriptive statistics PCDD66
+```{r PCDD66}
+describe(Phaenotyp$PCDD66, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDD66, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDD66)
+quantile(Phaenotyp$PCDD66, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDD66, xlab =  "PCDD66", main = "Distribution of PCDD66")
+boxplot(Phaenotyp$PCDD66, main ="Boxplot PCDD66", ylab = "PCDD66")
+```
+
+## descriptive statistics PCDD67
+```{r PCDD67}
+describe(Phaenotyp$PCDD67, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDD67, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDD67)
+quantile(Phaenotyp$PCDD67, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDD67, xlab =  "PCDD67", main = "Distribution of PCDD67")
+boxplot(Phaenotyp$PCDD67, main ="Boxplot PCDD67", ylab = "PCDD67")
+```
+
+## descriptive statistics PCDD70
+```{r PCDD70}
+describe(Phaenotyp$PCDD70, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDD70, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDD70)
+quantile(Phaenotyp$PCDD70, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDD70, xlab =  "PCDD70", main = "Distribution of PCDD70")
+boxplot(Phaenotyp$PCDD70, main ="Boxplot PCDD70", ylab = "PCDD70")
+```
+
+## descriptive statistics PCDD73
+```{r PCDD73}
+describe(Phaenotyp$PCDD73, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDD73, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDD73)
+quantile(Phaenotyp$PCDD73, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDD73, xlab =  "PCDD73", main = "Distribution of PCDD73")
+boxplot(Phaenotyp$PCDD73, main ="Boxplot PCDD73", ylab = "PCDD73")
+```
+
+## descriptive statistics PCDD75
+```{r PCDD75}
+describe(Phaenotyp$PCDD75, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDD75, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDD75)
+quantile(Phaenotyp$PCDD75, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDD75, xlab =  "PCDD75", main = "Distribution of PCDD75")
+boxplot(Phaenotyp$PCDD75, main ="Boxplot PCDD75", ylab = "PCDD75")
+```
+
+## descriptive statistics PCDF114
+```{r PCDF114}
+describe(Phaenotyp$PCDF114, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDF114, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDF114)
+quantile(Phaenotyp$PCDF114, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDF114, xlab =  "PCDF114", main = "Distribution of PCDF114")
+boxplot(Phaenotyp$PCDF114, main ="Boxplot PCDF114", ylab = "PCDF114")
+```
+
+## descriptive statistics PCDF118
+```{r PCDF118}
+describe(Phaenotyp$PCDF118, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDF118, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDF118)
+quantile(Phaenotyp$PCDF118, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDF118, xlab =  "PCDF118", main = "Distribution of PCDF118")
+boxplot(Phaenotyp$PCDF118, main ="Boxplot PCDF118", ylab = "PCDF118")
+```
+
+## descriptive statistics PCDF121
+```{r PCDF121}
+describe(Phaenotyp$PCDF121, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDF121, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDF121)
+quantile(Phaenotyp$PCDF121, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDF121, xlab =  "PCDF121", main = "Distribution of PCDF121")
+boxplot(Phaenotyp$PCDF121, main ="Boxplot PCDF121", ylab = "PCDF121")
+```
+
+## descriptive statistics PCDF130
+```{r PCDF130}
+describe(Phaenotyp$PCDF130, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDF130, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDF130)
+quantile(Phaenotyp$PCDF130, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDF130, xlab =  "PCDF130", main = "Distribution of PCDF130")
+boxplot(Phaenotyp$PCDF130, main ="Boxplot PCDF130", ylab = "PCDF130")
+```
+
+## descriptive statistics PCDF131
+```{r PCDF131}
+describe(Phaenotyp$PCDF131, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$PCDF131, na.rm = TRUE)
+geometric.mean(Phaenotyp$PCDF131)
+quantile(Phaenotyp$PCDF131, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$PCDF131, xlab =  "PCDF131", main = "Distribution of PCDF131")
+boxplot(Phaenotyp$PCDF131, main ="Boxplot PCDF131", ylab = "PCDF131")
+```
+
+## descriptive statistics weight_n
+```{r weight_n}
+describe(Phaenotyp$weight_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$weight_n, na.rm = TRUE)
+geometric.mean(Phaenotyp$weight_n)
+quantile(Phaenotyp$weight_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$weight_n, xlab =  "weight_n", main = "Distribution of weight_n")
+boxplot(Phaenotyp$weight_n, main ="Boxplot weight_n", ylab = "weight_n")
+```
+
+## descriptive statistics height_n
+```{r height_n}
+describe(Phaenotyp$height_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$height_n, na.rm = TRUE)
+geometric.mean(Phaenotyp$height_n)
+quantile(Phaenotyp$height_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$height_n, xlab =  "height_n", main = "Distribution of height_n")
+boxplot(Phaenotyp$height_n, main ="Boxplot height_n", ylab = "height_n")
+```
+
+## descriptive statistics BMI_n
+```{r BMI_n}
+describe(Phaenotyp$BMI_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$BMI_n, na.rm = TRUE)
+geometric.mean(Phaenotyp$BMI_n)
+quantile(Phaenotyp$BMI_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$BMI_n, xlab =  "BMI_n", main = "Distribution of BMI_n")
+boxplot(Phaenotyp$BMI_n, main ="Boxplot BMI_n", ylab = "BMI_n")
+```
+
+## descriptive statistics sex of the neonate
+```{r sex}
+table(Phaenotyp$sex_n)
+prop.table(table(Phaenotyp$sex_n))
+barplot(table(Phaenotyp$sex_n), names = c("boys", "girls"), ylim = c(0 , 90))
+```
+
+## descriptive statistics weight_m
+```{r weight_m}
+describe(Phaenotyp$weight_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$weight_m, na.rm = TRUE)
+geometric.mean(Phaenotyp$weight_m)
+quantile(Phaenotyp$weight_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$weight_m, xlab =  "weight_m", main = "Distribution of weight_m")
+boxplot(Phaenotyp$weight_m, main ="Boxplot weight_m", ylab = "weight_m")
+```
+
+## descriptive statistics height_m
+```{r height_m}
+describe(Phaenotyp$height_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$height_m, na.rm = TRUE)
+geometric.mean(Phaenotyp$height_m)
+quantile(Phaenotyp$height_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$height_m, xlab =  "height_m", main = "Distribution of height_m")
+boxplot(Phaenotyp$height_m, main ="Boxplot height_m", ylab = "height_m")
+```
+
+## descriptive statistics BMI_m
+```{r BMI_m}
+describe(Phaenotyp$BMI_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$BMI_m, na.rm = TRUE)
+geometric.mean(Phaenotyp$BMI_m)
+quantile(Phaenotyp$BMI_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$BMI_m, xlab =  "BMI_m", main = "Distribution of BMI_m")
+boxplot(Phaenotyp$BMI_m, main ="Boxplot BMI_m", ylab = "BMI_m")
+```
+
+## descriptive statistics age_m
+```{r age_m}
+describe(Phaenotyp$age_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$age_m, na.rm = TRUE)
+geometric.mean(Phaenotyp$age_m)
+quantile(Phaenotyp$age_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$age_m, xlab =  "age_m", main = "Distribution of age_m")
+boxplot(Phaenotyp$age_m, main ="Boxplot age_m", ylab = "age_m")
+```
+
+## descriptive statistics of mother's education
+```{r education}
+table(Phaenotyp$highEduc_m_r)
+prop.table(table(Phaenotyp$highEduc_m_r))
+barplot(table(Phaenotyp$highEduc_m_r), names = c("no degree", "Hauptschulabschluss", "Mittlere Reife", "Fachhochschulreife", "Abitur"), ylim = c(0 , 140), main ="mother's education")
+```
+
+## descriptive statistics dur_gast
+```{r gestation}
+describe(Phaenotyp$dur_gast, skew = FALSE) #sample size, mean, sd, min, max, range
+median(Phaenotyp$dur_gast, na.rm = TRUE)
+geometric.mean(Phaenotyp$dur_gast)
+quantile(Phaenotyp$dur_gast, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(Phaenotyp$dur_gast, xlab =  "dur_gast", main = "Distribution of dur_gast")
+boxplot(Phaenotyp$dur_gast, main ="Boxplot dur_gast", ylab = "dur_gast")
+```
+
+## descriptive statistics of mother's smoking status
+```{r smoking}
+table(Phaenotyp$smoke_m_r)
+prop.table(table(Phaenotyp$smoke_m_r))
+barplot(table(Phaenotyp$smoke_m_r), names = c("no smoking", "smoking"), ylim = c(0 , 120), main ="smoking during pregnancy")
+```
+
+## Subsets girls and boys
+```{r subsets}
+girls <- subset(Phaenotyp, Phaenotyp$sex_n == 0)
+boys <- subset(Phaenotyp, Phaenotyp$sex_n == 1)
+
+```
+
+
+## descriptive statistics girls PCB77
+```{r PCB77 girls}
+describe(girls$PCB77, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCB77, na.rm = TRUE)
+geometric.mean(girls$PCB77)
+quantile(girls$PCB77, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCB77, xlab =  "PCB77", main = "Distribution of PCB77")
+boxplot(girls$PCB77, main ="Boxplot PCB77", ylab = "PCB77")
+```
+
+## descriptive statistics girls PCB81
+```{r PCB81 girls}
+describe(girls$PCB81, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCB81, na.rm = TRUE)
+geometric.mean(girls$PCB81, na.rm = TRUE)
+quantile(girls$PCB81, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCB81, xlab =  "PCB81", main = "Distribution of PCB81")
+boxplot(girls$PCB81, main ="Boxplot PCB81", ylab = "PCB81")
+```
+
+## descriptive statistics girls PCB126
+```{r PCB126 girls}
+describe(girls$PCB126, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCB126, na.rm = TRUE)
+geometric.mean(girls$PCB126)
+quantile(girls$PCB126, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCB126, xlab =  "PCB126", main = "Distribution of PCB126")
+boxplot(girls$PCB126, main ="Boxplot PCB126", ylab = "PCB126")
+```
+
+## descriptive statistics girls PCB169
+```{r PCB169 girls}
+describe(girls$PCB169, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCB169, na.rm = TRUE)
+geometric.mean(girls$PCB169)
+quantile(girls$PCB169, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCB169, xlab =  "PCB169", main = "Distribution of PCB169")
+boxplot(girls$PCB169, main ="Boxplot PCB169", ylab = "PCB169")
+```
+
+## descriptive statistics girls PCDD48
+```{r PCDD48 girls}
+describe(girls$PCDD48, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDD48, na.rm = TRUE)
+geometric.mean(girls$PCDD48)
+quantile(girls$PCDD48, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDD48, xlab =  "PCDD48", main = "Distribution of PCDD48")
+boxplot(girls$PCDD48, main ="Boxplot PCDD48", ylab = "PCDD48")
+```
+
+## descriptive statistics girls PCDD54
+```{r PCDD54 girls}
+describe(girls$PCDD54, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDD54, na.rm = TRUE)
+geometric.mean(girls$PCDD54)
+quantile(girls$PCDD54, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDD54, xlab =  "PCDD54", main = "Distribution of PCDD54")
+boxplot(girls$PCDD54, main ="Boxplot PCDD54", ylab = "PCDD54")
+```
+
+## descriptive statistics girls PCDD66
+```{r PCDD66 girls}
+describe(girls$PCDD66, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDD66, na.rm = TRUE)
+geometric.mean(girls$PCDD66)
+quantile(girls$PCDD66, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDD66, xlab =  "PCDD66", main = "Distribution of PCDD66")
+boxplot(girls$PCDD66, main ="Boxplot PCDD66", ylab = "PCDD66")
+```
+
+## descriptive statistics girls PCDD67
+```{r PCDD67 girls}
+describe(girls$PCDD67, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDD67, na.rm = TRUE)
+geometric.mean(girls$PCDD67)
+quantile(girls$PCDD67, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDD67, xlab =  "PCDD67", main = "Distribution of PCDD67")
+boxplot(girls$PCDD67, main ="Boxplot PCDD67", ylab = "PCDD67")
+```
+
+## descriptive statistics girls PCDD70
+```{r PCDD70 girls}
+describe(girls$PCDD70, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDD70, na.rm = TRUE)
+geometric.mean(girls$PCDD70)
+quantile(girls$PCDD70, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDD70, xlab =  "PCDD70", main = "Distribution of PCDD70")
+boxplot(girls$PCDD70, main ="Boxplot PCDD70", ylab = "PCDD70")
+```
+
+## descriptive statistics girls PCDD73
+```{r PCDD73 girls}
+describe(girls$PCDD73, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDD73, na.rm = TRUE)
+geometric.mean(girls$PCDD73)
+quantile(girls$PCDD73, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDD73, xlab =  "PCDD73", main = "Distribution of PCDD73")
+boxplot(girls$PCDD73, main ="Boxplot PCDD73", ylab = "PCDD73")
+```
+
+## descriptive statistics girls PCDD75
+```{r PCDD75 girls}
+describe(girls$PCDD75, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDD75, na.rm = TRUE)
+geometric.mean(girls$PCDD75)
+quantile(girls$PCDD75, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDD75, xlab =  "PCDD75", main = "Distribution of PCDD75")
+boxplot(girls$PCDD75, main ="Boxplot PCDD75", ylab = "PCDD75")
+```
+
+## descriptive statistics girls PCDF114
+```{r PCDF114 girls}
+describe(girls$PCDF114, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDF114, na.rm = TRUE)
+geometric.mean(girls$PCDF114)
+quantile(girls$PCDF114, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDF114, xlab =  "PCDF114", main = "Distribution of PCDF114")
+boxplot(girls$PCDF114, main ="Boxplot PCDF114", ylab = "PCDF114")
+```
+
+## descriptive statistics girls PCDF118
+```{r PCDF118 girls}
+describe(girls$PCDF118, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDF118, na.rm = TRUE)
+geometric.mean(girls$PCDF118)
+quantile(girls$PCDF118, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDF118, xlab =  "PCDF118", main = "Distribution of PCDF118")
+boxplot(girls$PCDF118, main ="Boxplot PCDF118", ylab = "PCDF118")
+```
+
+## descriptive statistics girls PCDF121
+```{r PCDF121 girls}
+describe(girls$PCDF121, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDF121, na.rm = TRUE)
+geometric.mean(girls$PCDF121)
+quantile(girls$PCDF121, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDF121, xlab =  "PCDF121", main = "Distribution of PCDF121")
+boxplot(girls$PCDF121, main ="Boxplot PCDF121", ylab = "PCDF121")
+```
+
+## descriptive statistics girls PCDF130
+```{r PCDF130 girls}
+describe(girls$PCDF130, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDF130, na.rm = TRUE)
+geometric.mean(girls$PCDF130)
+quantile(girls$PCDF130, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDF130, xlab =  "PCDF130", main = "Distribution of PCDF130")
+boxplot(girls$PCDF130, main ="Boxplot PCDF130", ylab = "PCDF130")
+```
+
+## descriptive statistics girls PCDF131
+```{r PCDF131 girls}
+describe(girls$PCDF131, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$PCDF131, na.rm = TRUE)
+geometric.mean(girls$PCDF131)
+quantile(girls$PCDF131, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$PCDF131, xlab =  "PCDF131", main = "Distribution of PCDF131")
+boxplot(girls$PCDF131, main ="Boxplot PCDF131", ylab = "PCDF131")
+```
+
+## descriptive statistics girls weight_n
+```{r weight_n girls}
+describe(girls$weight_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$weight_n, na.rm = TRUE)
+geometric.mean(girls$weight_n)
+quantile(girls$weight_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$weight_n, xlab =  "weight_n", main = "Distribution of weight_n")
+boxplot(girls$weight_n, main ="Boxplot weight_n", ylab = "weight_n")
+```
+
+## descriptive statistics girls height_n
+```{r height_n girls}
+describe(girls$height_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$height_n, na.rm = TRUE)
+geometric.mean(girls$height_n)
+quantile(girls$height_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$height_n, xlab =  "height_n", main = "Distribution of height_n")
+boxplot(girls$height_n, main ="Boxplot height_n", ylab = "height_n")
+```
+
+## descriptive statistics girls BMI_n
+```{r BMI_n girls}
+describe(girls$BMI_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$BMI_n, na.rm = TRUE)
+geometric.mean(girls$BMI_n)
+quantile(girls$BMI_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$BMI_n, xlab =  "BMI_n", main = "Distribution of BMI_n")
+boxplot(girls$BMI_n, main ="Boxplot BMI_n", ylab = "BMI_n")
+```
+
+
+## descriptive statistics girls weight_m
+```{r weight_m girls}
+describe(girls$weight_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$weight_m, na.rm = TRUE)
+geometric.mean(girls$weight_m)
+quantile(girls$weight_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$weight_m, xlab =  "weight_m", main = "Distribution of weight_m")
+boxplot(girls$weight_m, main ="Boxplot weight_m", ylab = "weight_m")
+```
+
+## descriptive statistics girls height_m
+```{r height_m girls}
+describe(girls$height_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$height_m, na.rm = TRUE)
+geometric.mean(girls$height_m)
+quantile(girls$height_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$height_m, xlab =  "height_m", main = "Distribution of height_m")
+boxplot(girls$height_m, main ="Boxplot height_m", ylab = "height_m")
+```
+
+## descriptive statistics girls BMI_m
+```{r BMI_m girls}
+describe(girls$BMI_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$BMI_m, na.rm = TRUE)
+geometric.mean(girls$BMI_m)
+quantile(girls$BMI_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$BMI_m, xlab =  "BMI_m", main = "Distribution of BMI_m")
+boxplot(girls$BMI_m, main ="Boxplot BMI_m", ylab = "BMI_m")
+```
+
+## descriptive statistics girls age_m
+```{r age_m girls}
+describe(girls$age_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$age_m, na.rm = TRUE)
+geometric.mean(girls$age_m)
+quantile(girls$age_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$age_m, xlab =  "age_m", main = "Distribution of age_m")
+boxplot(girls$age_m, main ="Boxplot age_m", ylab = "age_m")
+```
+
+## descriptive statistics girls of mother's education
+```{r education girls}
+table(girls$highEduc_m_r)
+prop.table(table(girls$highEduc_m_r))
+barplot(table(girls$highEduc_m_r), names = c("no degree", "Hauptschulabschluss", "Mittlere Reife", "Fachhochschulreife", "Abitur"), ylim = c(0 , 140), main ="mother's education")
+```
+
+## descriptive statistics girls dur_gast
+```{r gestation girls}
+describe(girls$dur_gast, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls$dur_gast, na.rm = TRUE)
+geometric.mean(girls$dur_gast)
+quantile(girls$dur_gast, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(girls$dur_gast, xlab =  "dur_gast", main = "Distribution of dur_gast")
+boxplot(girls$dur_gast, main ="Boxplot dur_gast", ylab = "dur_gast")
+```
+
+## descriptive statistics girls of mother's smoking status
+```{r smoking girls}
+table(girls$smoke_m_r)
+prop.table(table(girls$smoke_m_r))
+barplot(table(girls$smoke_m_r), names = c("no smoking", "smoking"), ylim = c(0 , 120), main ="smoking during pregnancy")
+```
+
+## descriptive statistics boys PCB77
+```{r PCB77 boys}
+describe(boys$PCB77, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCB77, na.rm = TRUE)
+geometric.mean(boys$PCB77)
+quantile(boys$PCB77, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCB77, xlab =  "PCB77", main = "Distribution of PCB77")
+boxplot(boys$PCB77, main ="Boxplot PCB77", ylab = "PCB77")
+```
+
+## descriptive statistics boys PCB81
+```{r PCB81 boys}
+describe(boys$PCB81, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCB81, na.rm = TRUE)
+geometric.mean(boys$PCB81, na.rm = TRUE)
+quantile(boys$PCB81, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCB81, xlab =  "PCB81", main = "Distribution of PCB81")
+boxplot(boys$PCB81, main ="Boxplot PCB81", ylab = "PCB81")
+```
+
+## descriptive statistics boys PCB126
+```{r PCB126 boys}
+describe(boys$PCB126, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCB126, na.rm = TRUE)
+geometric.mean(boys$PCB126)
+quantile(boys$PCB126, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCB126, xlab =  "PCB126", main = "Distribution of PCB126")
+boxplot(boys$PCB126, main ="Boxplot PCB126", ylab = "PCB126")
+```
+
+## descriptive statistics boys PCB169
+```{r PCB169 boys}
+describe(boys$PCB169, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCB169, na.rm = TRUE)
+geometric.mean(boys$PCB169)
+quantile(boys$PCB169, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCB169, xlab =  "PCB169", main = "Distribution of PCB169")
+boxplot(boys$PCB169, main ="Boxplot PCB169", ylab = "PCB169")
+```
+
+## descriptive statistics boys PCDD48
+```{r PCDD48 boys}
+describe(boys$PCDD48, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDD48, na.rm = TRUE)
+geometric.mean(boys$PCDD48)
+quantile(boys$PCDD48, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDD48, xlab =  "PCDD48", main = "Distribution of PCDD48")
+boxplot(boys$PCDD48, main ="Boxplot PCDD48", ylab = "PCDD48")
+```
+
+## descriptive statistics boys PCDD54
+```{r PCDD54 boys}
+describe(boys$PCDD54, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDD54, na.rm = TRUE)
+geometric.mean(boys$PCDD54)
+quantile(boys$PCDD54, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDD54, xlab =  "PCDD54", main = "Distribution of PCDD54")
+boxplot(boys$PCDD54, main ="Boxplot PCDD54", ylab = "PCDD54")
+```
+
+## descriptive statistics boys PCDD66
+```{r PCDD66 boys}
+describe(boys$PCDD66, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDD66, na.rm = TRUE)
+geometric.mean(boys$PCDD66)
+quantile(boys$PCDD66, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDD66, xlab =  "PCDD66", main = "Distribution of PCDD66")
+boxplot(boys$PCDD66, main ="Boxplot PCDD66", ylab = "PCDD66")
+```
+
+## descriptive statistics boys PCDD67
+```{r PCDD67 boys}
+describe(boys$PCDD67, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDD67, na.rm = TRUE)
+geometric.mean(boys$PCDD67)
+quantile(boys$PCDD67, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDD67, xlab =  "PCDD67", main = "Distribution of PCDD67")
+boxplot(boys$PCDD67, main ="Boxplot PCDD67", ylab = "PCDD67")
+```
+
+## descriptive statistics boys PCDD70
+```{r PCDD70 boys}
+describe(boys$PCDD70, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDD70, na.rm = TRUE)
+geometric.mean(boys$PCDD70)
+quantile(boys$PCDD70, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDD70, xlab =  "PCDD70", main = "Distribution of PCDD70")
+boxplot(boys$PCDD70, main ="Boxplot PCDD70", ylab = "PCDD70")
+```
+
+## descriptive statistics boys PCDD73
+```{r PCDD73 boys}
+describe(boys$PCDD73, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDD73, na.rm = TRUE)
+geometric.mean(boys$PCDD73)
+quantile(boys$PCDD73, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDD73, xlab =  "PCDD73", main = "Distribution of PCDD73")
+boxplot(boys$PCDD73, main ="Boxplot PCDD73", ylab = "PCDD73")
+```
+
+## descriptive statistics boys PCDD75
+```{r PCDD75 boys}
+describe(boys$PCDD75, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDD75, na.rm = TRUE)
+geometric.mean(boys$PCDD75)
+quantile(boys$PCDD75, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDD75, xlab =  "PCDD75", main = "Distribution of PCDD75")
+boxplot(boys$PCDD75, main ="Boxplot PCDD75", ylab = "PCDD75")
+```
+
+## descriptive statistics boys PCDF114
+```{r PCDF114 boys}
+describe(boys$PCDF114, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDF114, na.rm = TRUE)
+geometric.mean(boys$PCDF114)
+quantile(boys$PCDF114, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDF114, xlab =  "PCDF114", main = "Distribution of PCDF114")
+boxplot(boys$PCDF114, main ="Boxplot PCDF114", ylab = "PCDF114")
+```
+
+## descriptive statistics boys PCDF118
+```{r PCDF118 boys}
+describe(boys$PCDF118, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDF118, na.rm = TRUE)
+geometric.mean(boys$PCDF118)
+quantile(boys$PCDF118, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDF118, xlab =  "PCDF118", main = "Distribution of PCDF118")
+boxplot(boys$PCDF118, main ="Boxplot PCDF118", ylab = "PCDF118")
+```
+
+## descriptive statistics boys PCDF121
+```{r PCDF121 boys}
+describe(boys$PCDF121, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDF121, na.rm = TRUE)
+geometric.mean(boys$PCDF121)
+quantile(boys$PCDF121, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDF121, xlab =  "PCDF121", main = "Distribution of PCDF121")
+boxplot(boys$PCDF121, main ="Boxplot PCDF121", ylab = "PCDF121")
+```
+
+## descriptive statistics boys PCDF130
+```{r PCDF130 boys}
+describe(boys$PCDF130, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDF130, na.rm = TRUE)
+geometric.mean(boys$PCDF130)
+quantile(boys$PCDF130, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDF130, xlab =  "PCDF130", main = "Distribution of PCDF130")
+boxplot(boys$PCDF130, main ="Boxplot PCDF130", ylab = "PCDF130")
+```
+
+## descriptive statistics boys PCDF131
+```{r PCDF131 boys}
+describe(boys$PCDF131, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$PCDF131, na.rm = TRUE)
+geometric.mean(boys$PCDF131)
+quantile(boys$PCDF131, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$PCDF131, xlab =  "PCDF131", main = "Distribution of PCDF131")
+boxplot(boys$PCDF131, main ="Boxplot PCDF131", ylab = "PCDF131")
+```
+
+## descriptive statistics boys weight_n
+```{r weight_n boys}
+describe(boys$weight_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$weight_n, na.rm = TRUE)
+geometric.mean(boys$weight_n)
+quantile(boys$weight_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$weight_n, xlab =  "weight_n", main = "Distribution of weight_n")
+boxplot(boys$weight_n, main ="Boxplot weight_n", ylab = "weight_n")
+```
+
+## descriptive statistics boys height_n
+```{r height_n boys}
+describe(boys$height_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$height_n, na.rm = TRUE)
+geometric.mean(boys$height_n)
+quantile(boys$height_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$height_n, xlab =  "height_n", main = "Distribution of height_n")
+boxplot(boys$height_n, main ="Boxplot height_n", ylab = "height_n")
+```
+
+## descriptive statistics boys BMI_n
+```{r BMI_n boys}
+describe(boys$BMI_n, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$BMI_n, na.rm = TRUE)
+geometric.mean(boys$BMI_n)
+quantile(boys$BMI_n, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$BMI_n, xlab =  "BMI_n", main = "Distribution of BMI_n")
+boxplot(boys$BMI_n, main ="Boxplot BMI_n", ylab = "BMI_n")
+```
+
+## descriptive statistics boys weight_m
+```{r weight_m boys}
+describe(boys$weight_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$weight_m, na.rm = TRUE)
+geometric.mean(boys$weight_m)
+quantile(boys$weight_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$weight_m, xlab =  "weight_m", main = "Distribution of weight_m")
+boxplot(boys$weight_m, main ="Boxplot weight_m", ylab = "weight_m")
+```
+
+## descriptive statistics boys height_m
+```{r height_m boys}
+describe(boys$height_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$height_m, na.rm = TRUE)
+geometric.mean(boys$height_m)
+quantile(boys$height_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$height_m, xlab =  "height_m", main = "Distribution of height_m")
+boxplot(boys$height_m, main ="Boxplot height_m", ylab = "height_m")
+```
+
+## descriptive statistics boys BMI_m
+```{r BMI_m boys}
+describe(boys$BMI_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$BMI_m, na.rm = TRUE)
+geometric.mean(boys$BMI_m)
+quantile(boys$BMI_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$BMI_m, xlab =  "BMI_m", main = "Distribution of BMI_m")
+boxplot(boys$BMI_m, main ="Boxplot BMI_m", ylab = "BMI_m")
+```
+
+## descriptive statistics boys age_m
+```{r age_m boys}
+describe(boys$age_m, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$age_m, na.rm = TRUE)
+geometric.mean(boys$age_m)
+quantile(boys$age_m, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$age_m, xlab =  "age_m", main = "Distribution of age_m")
+boxplot(boys$age_m, main ="Boxplot age_m", ylab = "age_m")
+```
+
+## descriptive statistics boys of mother's education
+```{r education boys}
+table(boys$highEduc_m_r)
+prop.table(table(boys$highEduc_m_r))
+barplot(table(boys$highEduc_m_r), names = c("no degree", "Hauptschulabschluss", "Mittlere Reife", "Fachhochschulreife", "Abitur"), ylim = c(0 , 140), main ="mother's education")
+```
+
+## descriptive statistics boys dur_gast
+```{r gestation boys}
+describe(boys$dur_gast, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys$dur_gast, na.rm = TRUE)
+geometric.mean(boys$dur_gast)
+quantile(boys$dur_gast, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+hist(boys$dur_gast, xlab =  "dur_gast", main = "Distribution of dur_gast")
+boxplot(boys$dur_gast, main ="Boxplot dur_gast", ylab = "dur_gast")
+```
+
+## descriptive statistics boys of mother's smoking status
+```{r smoking boys}
+table(boys$smoke_m_r)
+prop.table(table(boys$smoke_m_r))
+barplot(table(boys$smoke_m_r), names = c("no smoking", "smoking"), ylim = c(0 , 120), main ="smoking during pregnancy")
+```
