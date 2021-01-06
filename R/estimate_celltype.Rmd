@@ -1,0 +1,143 @@
+---
+title: "estimate_celltype"
+author: "Katharina Mattonet"
+date: "21 September 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## ## libraries
+
+```{r libraries}
+library(RnBeads)
+library(FlowSorted.CordTissueAndBlood.EPIC)
+```
+
+## file pathes
+
+```{r set up data file pathes}
+data.dir <- "/path"
+idat.dir <- file.path(data.dir,"idat") 
+sample.anno <- file.path(data.dir, "Annotation_Schadstoffstudie_EPIC.csv")
+
+## path for analysis and report storage of target data
+analysis.dir <- file.path("/path", "analysis_RnB_CellType")
+
+report.dir <- file.path(analysis.dir, "reports_target")
+
+## path for analysis and report storage of refpanel
+analysis.dir_ref <- file.path("/path", "analysis_ref")
+
+report.dir_ref <- file.path(analysis.dir_ref, "reports_ref")
+
+## save
+save_comb.dir <- file.path(analysis.dir, "comb_data")
+
+```
+
+## load data
+```{r load data}
+## targets
+data.source <- c(idat.dir, sample.anno)
+result <- rnb.run.import(data.source = data.source, data.type = "infinium.idat.dir", dir.reports = report.dir) 
+rnb.set <- result$rnb.set
+
+# refpanel
+data("FlowSorted.CordTissueAndBlood.EPIC")
+FlowSorted.CordTissueAndBlood.EPIC = updateObject(FlowSorted.CordTissueAndBlood.EPIC)
+refpanel <- as(FlowSorted.CordTissueAndBlood.EPIC, "RnBeadRawSet")
+
+```
+
+## prepare data
+```{r prepare data}
+## cf. preprocess_DNAmData.Rmd: samples to be removed due to bad quality or non-matiching a priori criteria or missing values in pheno data
+rnb.set <- remove.samples(rnb.set, rnb.set@pheno[["Sample_Name"]] %in% c("2", "4", "5", "6", "25", "40", "45", "68", "77", "80", "127", "160", "161", "162"))
+!rnb.set@pheno[["Sample_Name"]] %in% c("2", "4", "5", "6", "25", "40", "45", "68", "77", "80", "127", "160", "161", "162") # all TRUE
+
+#refpanel
+## add sentrix_Position and _ID to refpanel
+Sentrix_Position <- rownames(FlowSorted.CordTissueAndBlood.EPIC@colData)
+Sentrix_Position <- gsub(".*_","", Sentrix_Position)
+refpanel@pheno$Sentrix_Position <- Sentrix_Position
+
+Sentrix_ID <- rownames(FlowSorted.CordTissueAndBlood.EPIC@colData)
+Sentrix_ID <- gsub("_.*","", Sentrix_ID)
+Sentrix_ID <- as.double(Sentrix_ID)
+refpanel@pheno$Sentrix_ID <- Sentrix_ID
+
+## add detection p-values to refpanel calcuated with minif´s detectionP()
+p.values <- detectionP(FlowSorted.CordTissueAndBlood.EPIC)
+refpanel@pval.sites <- p.values
+attributes(refpanel@pval.sites)
+refpanel_all <- refpanel
+
+## remove all cord tissue samples in refpanel 
+refpanel <- remove.samples(refpanel, refpanel@pheno[["Tissue"]] != "CB") # CB = cord blood
+```
+
+## preprocess data
+
+```{r preprocess data}
+# targets
+rnb.set.unfiltered <- rnb.set 
+nrow(meth(rnb.set.unfiltered)) # 866895
+
+rnb.options(filtering.cross.reactive = TRUE, filtering.sex.chromosomes.removal = TRUE, filtering.missing.value.quantile = 0)
+result_prepro <- rnb.run.preprocessing(rnb.set.unfiltered, dir.reports = report.dir) 
+rnb.set <- result_prepro$rnb.set
+rnb.set_noNA <- rnb.set
+nrow(meth(rnb.set_noNA)) # 743772
+
+## cf. preprocess_DNAmData.Rmd: remove due to outliers in MDS-plot and gender swaps
+rnb.set_noNA <- remove.samples(rnb.set_noNA, rnb.set_noNA@pheno[["Sample_Name"]] %in% c("11", "49", "71", "101", "111", "112"))
+!rnb.set_noNA@pheno[["Sample_Name"]] %in% c("11", "49", "71", "101", "111", "112") # all TRUE
+
+#refpanel
+refpanel.unfiltered <- refpanel 
+nrow(meth(rnb.set.unfiltered)) # 866895
+
+refpanel.unfiltered@pval.sites <- NULL
+rnb.options(filtering.cross.reactive = TRUE, filtering.sex.chromosomes.removal = TRUE, filtering.missing.value.quantile = 0)
+result_prepro_ref <- rnb.run.preprocessing(refpanel.unfiltered, dir.reports = report.dir_ref)
+refpanel <- result_prepro_ref$rnb.set
+refpanel_nopval <- result_prepro_ref$rnb.set
+nrow(meth(refpanel_nopval)) # 786669
+
+```
+
+# combine target data and reference panel to one RnBeadRawSet for inference of cell type contribution 
+
+```{r combine data}
+comb_data <- rnb.combine.arrays(rnb.set_noNA, refpanel_nopval, type = "all.x") 
+```
+
+# Inference of cell type contribution
+
+```{r inference of cell type contribution}
+
+ct.obj <- rnb.execute.ct.estimation(comb_data, cell.type.column = "CellType", test.max.markers = 50000, top.markers = 500)
+
+ct_ref_noNA_N144 <- as.data.frame(ct.obj$contributions.nonneg)
+
+D_Std <- rnb.set_noNA@pheno$Sample_Name
+ct_ref_noNA_N144$D_StdNr <- D_Std
+ct_ref_noNA_N144 <- ct_ref_noNA_N144[, c(7, 1:6)] # reorder
+
+write.table(ct_ref_noNA_N144, file = "path/celltypes_estimates_github.txt", sep = "\t", dec = ".", row.names = TRUE, col.names = TRUE)
+save(ct_ref_noNA_N144, file = "path/celltypes_estimates_github.RData")
+
+```
+
+# save comb_data
+
+```{r save}
+# save 
+save.rnb.set(comb_data, path = save_comb.dir, archive = TRUE)
+
+sessionInfo()
+```
+

@@ -1,0 +1,157 @@
+---
+title: "preprocess_phenoData"
+author: "Katharina Mattonet"
+date: "21 September 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## libraries 
+```{rlibraries}
+library(dplyr)
+library(car)
+
+```
+
+## import pheno data
+
+```{r pheno data import}
+# import data from data base
+Alter_M_K <- read.delim2("C:/Users/mattokhq/Desktop/05_Schadstoffstudie/Datenbank/Tabellen_aus_Datenbank/Alter_M_K.txt")
+Blut_Dioxin_PCB <- read.delim2("C:/Users/mattokhq/Desktop/05_Schadstoffstudie/Datenbank/Tabellen_aus_Datenbank/Blut_Dioxin_PCB.txt")
+dbo_BerAusw_Gew_Gro_BMI <- read.delim2("C:/Users/mattokhq/Desktop/05_Schadstoffstudie/Datenbank/Tabellen_aus_Datenbank/dbo_BerAusw_Gew_Gro_BMI.txt")
+EPICLaufnr_VpNr_Kodierung <- read.csv("C:/Users/mattokhq/Desktop/05_Schadstoffstudie/R/RnBeads_DNAm_EDCs_MeDeCom_Limma/EPICLaufnr_VpNr_Kodierung.csv", sep=";")
+dbo_U1_fb2 <- read.delim2("C:/Users/mattokhq/Desktop/05_Schadstoffstudie/Datenbank/Tabellen_aus_Datenbank/dbo_U1_fb2.txt", comment.char="#")
+Annotation_Schadstoffstudie_EPIC <- read.csv("C:/Users/mattokhq/Desktop/05_Schadstoffstudie/R/RnBeads_DNAm_EDCs_MeDeCom_Limma/Annotation_Schadstoffstudie_EPIC.csv")
+
+```
+
+## combine data as needed 
+
+```{r combine data}
+df_sex_age <- data.frame(Alter_M_K$StdNr, Alter_M_K$Sex_Kind, Alter_M_K$AlterM_zur_Geburt)
+colnames(df_sex_age) <- c("B_StdNr", "sex_n", "age_m") # B_StdNr = ID of samples in pheno data
+
+df_edc <- data.frame(Blut_Dioxin_PCB$B_StdNr, Blut_Dioxin_PCB$B_P0771L, Blut_Dioxin_PCB$B_P0811L, Blut_Dioxin_PCB$B_P1261L, Blut_Dioxin_PCB$B_P1691L, Blut_Dioxin_PCB$B_P1051L, Blut_Dioxin_PCB$B_P1141L, Blut_Dioxin_PCB$B_P1181L, Blut_Dioxin_PCB$B_P1231L, Blut_Dioxin_PCB$B_P1561L, Blut_Dioxin_PCB$B_P1571L, Blut_Dioxin_PCB$B_P1671L, Blut_Dioxin_PCB$B_P1891L, Blut_Dioxin_PCB$B_P0281L, Blut_Dioxin_PCB$B_P0521L, Blut_Dioxin_PCB$B_P1011L, Blut_Dioxin_PCB$B_P1381L, Blut_Dioxin_PCB$B_P1531L, Blut_Dioxin_PCB$B_P1801L, Blut_Dioxin_PCB$B_D41_1L, Blut_Dioxin_PCB$B_D51_1L, Blut_Dioxin_PCB$B_D61_1L, Blut_Dioxin_PCB$B_D62_1L, Blut_Dioxin_PCB$B_D63_1L, Blut_Dioxin_PCB$B_D71_1L, Blut_Dioxin_PCB$B_D81_1L, Blut_Dioxin_PCB$B_F41_1L, Blut_Dioxin_PCB$B_F51_1L, Blut_Dioxin_PCB$B_F52_1L, Blut_Dioxin_PCB$B_F61_1L, Blut_Dioxin_PCB$B_F62_1L, Blut_Dioxin_PCB$B_F63_1L, Blut_Dioxin_PCB$B_F64_1L, Blut_Dioxin_PCB$B_F71_1L, Blut_Dioxin_PCB$B_F72_1L , Blut_Dioxin_PCB$B_F81_1L, Blut_Dioxin_PCB$B_P0771M, Blut_Dioxin_PCB$B_P0811M, Blut_Dioxin_PCB$B_P1261M, Blut_Dioxin_PCB$B_P1691M, Blut_Dioxin_PCB$B_P1051M, Blut_Dioxin_PCB$B_P1141M, Blut_Dioxin_PCB$B_P1181M, Blut_Dioxin_PCB$B_P1231M, Blut_Dioxin_PCB$B_P1561M, Blut_Dioxin_PCB$B_P1571M, Blut_Dioxin_PCB$B_P1671M, Blut_Dioxin_PCB$B_P1891M, Blut_Dioxin_PCB$B_P0281M, Blut_Dioxin_PCB$B_P0521M, Blut_Dioxin_PCB$B_P1011M, Blut_Dioxin_PCB$B_P1381M, Blut_Dioxin_PCB$B_P1531M, Blut_Dioxin_PCB$B_P1801M, Blut_Dioxin_PCB$B_D41_1M, Blut_Dioxin_PCB$B_D51_1M, Blut_Dioxin_PCB$B_D61_1M, Blut_Dioxin_PCB$B_D62_1M, Blut_Dioxin_PCB$B_D63_1M, Blut_Dioxin_PCB$B_D71_1M, Blut_Dioxin_PCB$B_D81_1M, Blut_Dioxin_PCB$B_F41_1M, Blut_Dioxin_PCB$B_F51_1M, Blut_Dioxin_PCB$B_F52_1M, Blut_Dioxin_PCB$B_F61_1M, Blut_Dioxin_PCB$B_F62_1M, Blut_Dioxin_PCB$B_F63_1M, Blut_Dioxin_PCB$B_F64_1M, Blut_Dioxin_PCB$B_F71_1M, Blut_Dioxin_PCB$B_F72_1M ,Blut_Dioxin_PCB$B_F81_1M) 
+colnames(df_edc) <- c("B_StdNr", "PCB77", "PCB81", "PCB126", "PCB169", "PCB105", "PCB114", "PCB118", "PCB123", "PCB156", "PCB157", "PCB167", "PCB189",  "PCB28", "PCB52", "PCB101", "PCB138", "PCB153", "PCB180", "PCDD48", "PCDD54", "PCDD66", "PCDD67", "PCDD70", "PCDD73", "PCDD75", "PCDF83", "PCDF94", "PCDF114", "PCDF118", "PCDF121", "PCDF130", "PCDF124","PCDF131", "PCDF134", "PCDF135", "nonlog_PCB77", "nonlog_PCB81", "nonlog_PCB126", "nonlog_PCB169", "nonlog_PCB105", "nonlog_PCB114", "nonlog_PCB118", "nonlog_PCB123", "nonlog_PCB156", "nonlog_PCB157", "nonlog_PCB167", "nonlog_PCB189",  "nonlog_PCB28", "nonlog_PCB52", "nonlog_PCB101", "nonlog_PCB138", "nonlog_PCB153", "nonlog_PCB180", "nonlog_PCDD48", "nonlog_PCDD54", "nonlog_PCDD66", "nonlog_PCDD67", "nonlog_PCDD70", "nonlog_PCDD73", "nonlog_PCDD75", "nonlog_PCDF83", "nonlog_PCDF94", "nonlog_PCDF114", "nonlog_PCDF118", "nonlog_PCDF121", "nonlog_PCDF130", "nonlog_PCDF124","nonlog_PCDF131", "nonlog_PCDF134", "nonlog_PCDF135")
+df_edc_sex_age <- left_join(df_edc, df_sex_age)
+
+df_weightn <- data.frame(dbo_BerAusw_Gew_Gro_BMI$StdNr, dbo_BerAusw_Gew_Gro_BMI$U1_GebGew_k)
+colnames(df_weightn) <- c("B_StdNr", "weight_n")
+
+df_edc_sex_age_weightn <- left_join(df_edc_sex_age, df_weightn)
+
+df_smoke_bmi_alc_gest <- data.frame(dbo_U1_fb2$StdNr, dbo_U1_fb2$X7_2_RWaehr, dbo_U1_fb2$X2_2_GewVor, dbo_U1_fb2$X1_3_Gro, dbo_U1_fb2$X8_2_AlkInSchw, dbo_U1_fb2$X2_1_SchwDauer, dbo_U1_fb2$X5_1_SchulAb_Mutter)
+colnames(df_smoke_bmi_alc_gest) <- c("B_StdNr", "smoke_m", "weight_m", "height_m", "alc_m", "dur_gest", "highEduc_m")
+
+df_edc_sex_age_weightn_smoke_bmi_alc_gest <- left_join(df_edc_sex_age_weightn, df_smoke_bmi_alc_gest)
+
+colnames(EPICLaufnr_VpNr_Kodierung) <- c("D_StdNr", "B_StdNr") # D_StdNr = ID of samples in DNAm data, B_StdNr = ID of samples in pheno data
+EPICLaufnr_VpNr_Kodierung <- EPICLaufnr_VpNr_Kodierung[,c(2,1)]
+df_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest <- left_join(EPICLaufnr_VpNr_Kodierung, df_edc_sex_age_weightn_smoke_bmi_alc_gest)
+df_Dstdnr_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest <- df_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest[,c(2,1,3:81)]
+
+df_Dstdnr_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest <- df_Dstdnr_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest[ !(df_Dstdnr_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest$D_StdNr %in% c(165:170)), ]
+
+AMP_Plate <- Annotation_Schadstoffstudie_EPIC[, c(3,5)]
+colnames(AMP_Plate) <- c("D_StdNr", "AMP_Plate")
+df_Dstdnr_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest_AMPplate <- left_join(df_Dstdnr_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest, AMP_Plate)
+
+all_data <- df_Dstdnr_Bstdnr_edc_sex_age_weightn_smoke_bmi_alc_gest_AMPplate
+
+all_data$smoke_m_r <- car::recode(all_data$smoke_m, "c(1,2,3,4) = '1'; ", as.factor = TRUE) # 0 = non-smoking, 1 = smoking during pregnancy
+all_data$BMI_m <- all_data$weight_m / ((all_data$height_m/100)^2) 
+all_data$sex_n <- car::recode(all_data$sex_n, "2 = '0'; ", as.factor = TRUE) # 0 = female, 1 = male
+all_data$highEduc_m_r <- car::recode(all_data$highEduc_m, "6 = 1; ") # 6 = unknown
+
+all_data$dur_gest <- as.numeric(all_data$dur_gest)
+all_data$weight_m <- as.numeric(all_data$weight_m)
+all_data$height_m <- as.numeric(all_data$height_m)
+all_data$weight_n <- as.numeric(all_data$weight_n)
+all_data$alc_m <- as.factor(all_data$alc_m)
+
+#save(all_data, file = "path/pheno_data_N164_github.RData")
+
+```
+
+## explore data and remove samples with NAs
+
+```{r explore data}
+
+## missing values in all_data
+which(is.na(all_data$nonlog_PCB28)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB52)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB101)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB77)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB81)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB126)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB169)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB105)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB114)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB118)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB123)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB156)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB157)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB167)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB189)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB138)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB153)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCB180)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDD48)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDD54)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDD66)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDD67)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDD70)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDD73)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDD75)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF83)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF114)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF118)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF121)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF130)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF131)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF124)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF134)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$nonlog_PCDF135)) # D_StdNr: 77, 80, 127, 160
+which(is.na(all_data$sex_n)) # D_StdNr: 162
+which(is.na(all_data$age_m)) # D_StdNr: 162
+which(is.na(all_data$dur_gest)) # D_StdNr: 162
+which(is.na(all_data$weight_n)) # D_StdNr: 162
+which(is.na(all_data$smoke_m_r)) # D_StdNr: 162
+which(is.na(all_data$BMI_m)) # D_StdNr: 162
+which(is.na(all_data$alc_m)) #D_StdNr: 21, 46, 52, 69, 71, 134, 162
+which(is.na(all_data$highEduc_m)) #D_StdNr: 162
+
+final_data <- all_data[ !(all_data$D_StdNr %in% c(45, 68, 77, 80, 127, 160, 162)), ] # remove 45: same serum sample number as 44 (B_Std_Nr: 72), 68: not matching a priori criteria, 77, 80, 127 & 160: no EDCs data, 162: no sex of neonate, age of mother, duration gestation data
+#final_data$alc_m <- NULL # due to many NA in variable
+
+#save(pheno_data, file = "path/pheno_data_N157_github.RData")
+
+final_data <- final_data[ !(final_data$D_StdNr %in% c(2, 4, 5, 6, 11, 25, 40, 49, 71, 101, 111, 112, 161)), ] # removed conspicious samples in mValues (MDSplot) and sex mixups based on DNAm data and bad bisulfit DNAm data
+
+```
+
+# include congners with N > 25% concentration > limit of detection 
+
+```{r limit of detection}
+
+edc_lod_N144 <- data.frame(final_data$nonlog_PCB77, final_data$nonlog_PCB81, final_data$nonlog_PCB126, final_data$nonlog_PCB169, final_data$nonlog_PCB105, final_data$nonlog_PCB114, final_data$nonlog_PCB118, final_data$nonlog_PCB123, final_data$nonlog_PCB156, final_data$nonlog_PCB157, final_data$nonlog_PCB167, final_data$nonlog_PCB189, final_data$nonlog_PCB28, final_data$nonlog_PCB52, final_data$nonlog_PCB101, final_data$nonlog_PCB138, final_data$nonlog_PCB153, final_data$nonlog_PCB180, final_data$nonlog_PCDD48, final_data$nonlog_PCDD54, final_data$nonlog_PCDD66, final_data$nonlog_PCDD67, final_data$nonlog_PCDD70, final_data$nonlog_PCDD73, final_data$nonlog_PCDD75, final_data$nonlog_PCDF83, final_data$nonlog_PCDF94, final_data$nonlog_PCDF114, final_data$nonlog_PCDF118, final_data$nonlog_PCDF121, final_data$nonlog_PCDF130, final_data$nonlog_PCDF124, final_data$nonlog_PCDF131, final_data$nonlog_PCDF134, final_data$nonlog_PCDF135)
+
+## which congeners has measure <= .5 >= 25%
+for(i in 1:ncol(edc_lod_N144)) {
+  if((length(which((round(edc_lod_N144[,i], digit = 1) <= 0.5) == TRUE))/144) > .25)
+  print(colnames(edc_lod_N144)[i])
+}
+
+### congeners to be excluded from analysis due to more than 25% samples with values <= .5 (= LOD)
+remove_congeners <- as.vector(c("PCB105", "PCB114", "PCB118", "PCB123", "PCB156", "PCB157", "PCB167", "PCB189", "PCB28", "PCB52", "PCB101", "PCB138", "PCB153", "PCB180", "PCDF83", "PCDF94", "PCDF124", "PCDF134","PCDF135"))
+
+pheno_data <- as.data.frame(final_data[!(colnames(final_data) %in% remove_congeners)])
+colnames(pheno_data)
+
+save(pheno_data, file = "path/pheno_data_N144_github.RData")
+
+```

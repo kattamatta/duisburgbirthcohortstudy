@@ -1,0 +1,1185 @@
+---
+title: "WGCNA_sexstratified"
+author: "Katharina Mattonet"
+date: "21 September 2020"
+output: html_document
+---
+
+# set up libraries
+
+```{r set up libraries}
+
+library(WGCNA)
+library(dplyr)
+library(tidyverse)
+library(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
+library(IlluminaHumanMethylationEPICanno.ilm10b4.hg19)
+library(car)
+library(missMethyl)
+library(anRichment)
+library(ggplot2)
+library(gridExtra)
+
+#enableWGCNAThreads(6)
+#disableWGCNAThreads()
+
+```
+
+# load beta-value data (preprocessed, noNA, N=144) & pheno data
+
+```{r load data}
+load("path/bVal_github.RData")
+load("path/pheno_data_github.RData")
+load("path/celltypes_estimates_github.RData")
+```
+
+# prepare data
+```{r prepare data}
+# remove samples that did not survive preprocessing of DNAm
+pheno_data <- pheno_data[ !(pheno_data$D_StdNr %in% c(2, 4, 5, 6, 11, 25, 40, 49, 71, 101, 111, 112, 161)), ]
+
+ct_estimate <- ct_ref_noNA_N144
+
+bVal <- as.matrix(bVals_noNA_df)
+
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Locations")
+probeLoc <- as.data.frame(probeLoc)
+probeLoc <- probeLoc[rownames(bVal), ]
+bVal_annot <- cbind(bVal, probeLoc)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Other")
+probeLoc <- probeLoc[rownames(bVal), ]
+bVal_annot <- cbind(bVal_annot, probeLoc)
+bVal_annot_df <- as.data.frame(bVal_annot, optional = TRUE)
+
+bVal_onlyannot <- bVal_annot_df[, c(145:174)] # select relevant annotaiton information
+
+pheno_ct <- left_join(pheno_data, ct_estimate, by = "D_StdNr")
+
+# subset data by sex
+pheno_ct_f <- pheno_ct[pheno_ct$sex_n == 0, ]
+pheno_ct_f$laufnummer <- c(1:74)
+pheno_ct_m <- pheno_ct[pheno_ct$sex_n == 1, ]
+pheno_ct_m$laufnummer <- c(1:70)
+ID_f <- as.character(pheno_ct_f$D_StdNr)
+ID_m <- as.character(pheno_ct_m$D_StdNr)
+
+bVal_f <- bVal[, ID_f]
+Ychr <- bVal_annot[bVal_annot$chr != "chrY",]
+CgPYchr <- rownames(Ychr)
+bVal_f <- bVal_f[CgPYchr, ] # with CpGs only on X chromose
+
+bVal_m <- bVal[, ID_m]
+
+#plotMDS(bVal_m_f, top = 1000) # outlier D_StdNr 157
+#plotMDS(bVal_m_m, top = 1000) # outlier D_StdNr 55
+
+pheno_ct_female <- pheno_ct_f[ !(pheno_ct_f$D_StdNr %in% 157), ]
+bVal_female <- bVal_f[,!colnames(bVal_f) %in% "157"]
+bVal_t_female <- t(bVal_female)
+
+pheno_ct_male <- pheno_ct_m[ !(pheno_ct_m$D_StdNr %in% 55), ]
+bVal_male <- bVal_m[,!colnames(bVal_m) %in% "55"]
+bVal_t_male <- t(bVal_male)
+
+# for 50% top ranked CpGs
+beta_female_mad <- apply(bVal_female, 1, mad) # calcluate median absolute deviation for each probe
+bVal_female_sub <- t(bVal_female[beta_female_mad >= quantile(beta_female_mad, 0.5), ]) # select top 50% of probes
+
+beta_male_mad <- apply(bVal_male, 1, mad) 
+bVal_male_sub <- t(bVal_male[beta_male_mad >= quantile(beta_male_mad, 0.5), ])
+
+#save(bVal_female_sub, file = "path/bVal_female_mad_sub.RData")
+#save(bVal_male_sub, file = "path/bVal_male_mad_sub.RData")
+
+```
+
+# #############################
+# wgcna for female samples
+# #############################
+
+# analysis of power choise
+
+```{r analysis power choice}
+# choosing the soft-threshold power: analysis of network topology 
+powers <- c(c(1:10, seq(from = 12, to = 20, by = 2)))
+soft_threshold_fsub_bicor <- pickSoftThreshold(bVal_female_sub, corFnc = bicor, powerVector = powers, verbose = 5)
+
+# assess prober soft threshold choice by ploting results
+par(mfrow = c(1, 2))
+cex1 = 0.9 
+
+## scale-free topology fit index as a function of the soft-thresholding power
+pdf("plot_softthreshold_fsub_bicor.pdf")
+plot(soft_threshold_fsub_bicor$fitIndices[, 1], -sign(soft_threshold_fsub_bicor$fitIndices[, 3]) * soft_threshold_fsub_bicor$fitIndices[, 2],
+     xlab="Soft Threshold bicor female sub (power)", 
+     ylab="Scale Free Topology Model Fit,signed R^2", 
+     type="n", main=paste("Scale independence"))
+abline(h=0.90,col="red");
+text(soft_threshold_fsub_bicor$fitIndices[, 1], -sign(soft_threshold_fsub_bicor$fitIndices[, 3]) * soft_threshold_fsub_bicor$fitIndices[, 2],
+     labels=powers, cex=cex1, col="red")
+dev.off()
+
+## mean connectivity as a function of the soft-thresholding power
+pdf("plot_meanconnectivity_fsub_bicor.pdf")
+plot(soft_threshold_fsub_bicor$fitIndices[, 1], soft_threshold_fsub_bicor$fitIndices[, 5],
+     xlab="Soft Threshold bicor female sub (power)", ylab="Mean Connectivity", type="n",
+     main=paste("Mean connectivity"))
+text(soft_threshold_fsub_bicor$fitIndices[, 1], soft_threshold_fsub_bicor$fitIndices[, 5], 
+     labels=powers, cex=cex1, col="red")
+dev.off()
+
+``` 
+
+# pre-cluster blocks
+
+```{r pre-cluster}
+# pre-clustering using projective K-means
+pkm_fsub <- projectiveKMeans(bVal_female_sub, verbose = 5)
+
+```
+
+# run wgcng
+
+```{r run wgcna}
+# run WGCNA on beta values
+wgcna_fsub <- blockwiseModules(bVal_female_sub,
+                                      blocks = pkm_fsub$clusters,
+                                      power = 5,
+                                      networkType = "unsigned",
+                                      corType = "bicor", 
+                                      maxPOutliers = 0.10, 
+                                      saveTOMs=TRUE,
+                                      saveTOMFileBase="whiTOM_fsub",
+                                      verbose=5)
+#saveRDS(wgcna_fsub, file="wgcna_fsub.rds")
+
+```
+
+# calculate module eigenCpGs (eigengenes) and explained variance of PCs
+
+```{r eigenCpG}
+# calculate module eigengenes
+MEs_fsub <- moduleEigengenes(bVal_female_sub, wgcna_fsub$colors, excludeGrey = TRUE)
+#save(MEs_f, file="wagcna_eigencpgs_fsub.rds")
+
+MEs_fsub_pc10 <- moduleEigengenes(bVal_female_sub, wgcna_fsub$colors, nPC = 10, excludeGrey = TRUE)
+#save(MEs_f, file="wagcna_eigencpgs_fsub.rds")
+
+module_var_expl <- MEs_fsub_pc10$varExplained %>%
+  setNames(gsub("^ME", "", names(MEs_fsub_pc10$eigengenes))) %>%
+  mutate(brown_pro = brown*100) %>%
+  mutate(lightcyan1_pro = lightcyan1*100) %>%
+  mutate(red_pro = red*100) %>%
+  mutate(salmon_pro = salmon*100) %>%
+  mutate(white_pro = white*100) %>%
+  mutate(yellow_pro = yellow*100) %>%
+  mutate(dimension = c(1:10))
+
+scree_brown <- ggplot(module_var_expl,aes(x=dimension,y=brown_pro)) + 
+  geom_point() + 
+  geom_col(fill="tan4") + 
+  geom_line() + 
+  theme_bw() + scale_x_continuous(breaks=1:nrow(module_var_expl)) + 
+  ylab("% variance explained") +
+  xlab("principal component") +
+  theme_minimal() +
+ theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+scree_brown
+
+scree_lightcyan1 <- ggplot(module_var_expl,aes(x=dimension,y=lightcyan1)) + 
+  geom_point() + 
+  geom_col(fill="cyan4") + 
+  geom_line() + 
+  theme_bw() + scale_x_continuous(breaks=1:nrow(module_var_expl)) + 
+  ylab("% variance explained") +
+   xlab("principal component") +
+  theme_minimal() +
+ theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+scree_lightcyan1
+
+scree_red <- ggplot(module_var_expl,aes(x=dimension,y=red)) + 
+  geom_point() + 
+  geom_col(fill="red4") + 
+  geom_line() + 
+  theme_bw() + scale_x_continuous(breaks=1:nrow(module_var_expl)) + 
+  ylab("% variance explained") +
+   xlab("principal component") +
+  theme_minimal() +
+ theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+scree_red
+
+scree_salmon <- ggplot(module_var_expl,aes(x=dimension,y=salmon)) + 
+  geom_point() + 
+  geom_col(fill="salmon") + 
+  geom_line() + 
+  theme_bw() + scale_x_continuous(breaks=1:nrow(module_var_expl)) + 
+  ylab("% variance explained") +
+   xlab("principal component") +
+  theme_minimal() +
+ theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+scree_salmon
+
+scree_white <- ggplot(module_var_expl,aes(x=dimension,y=white)) + 
+  geom_point() + 
+  geom_col(fill="grey89") + 
+  geom_line() + 
+  theme_bw() + scale_x_continuous(breaks=1:nrow(module_var_expl)) + 
+  ylab("% variance explained") +
+   xlab("principal component") +
+  theme_minimal() +
+ theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+scree_white
+
+scree_yellow <- ggplot(module_var_expl,aes(x=dimension,y=yellow)) + 
+  geom_point() + 
+  geom_col(fill="gold2") + 
+  geom_line() + 
+  theme_bw() + scale_x_continuous(breaks=1:nrow(module_var_expl)) + 
+  ylab("% variance explained") +
+   xlab("principal component") +
+  theme_minimal() +
+ theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank())
+scree_yellow
+
+
+MEs_f_inclgrey <- moduleEigengenes(bVal_female_sub, wgcna_fsub$colors, excludeGrey = FALSE)
+
+```
+
+# get discriptive information on modules
+
+```{r descriptives}
+# descriptives
+bVal_female_sub <- t(bVal_female_sub)
+wgcna_input_cpgs_fsub <- rownames(bVal_female_sub)
+cpg_to_module_fsub <- data.frame(CpG = wgcna_input_cpgs_fsub, module = wgcna_fsub$colors, 
+                          stringsAsFactors = FALSE)
+mod_cpgs_fsub <- lapply(setNames(unique(wgcna_fsub$colors),unique(wgcna_fsub$colors)), function(m) wgcna_input_cpgs_fsub[wgcna_fsub$colors == m])
+mod_sizes_fsub <- cpg_to_module_fsub %>%
+  group_by(module) %>%
+  summarise(modSize=n())
+
+length(mod_cpgs_fsub)
+min(mod_sizes_fsub$modSize) 
+sort(mod_sizes_fsub$modSize, decreasing = TRUE)[2]
+```
+
+# filter top modules
+
+```{r top modules}
+# PCB 77
+res_f_pcb77 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcb77) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcb77) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCB77"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcb77 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCB77"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcb77[i,1:3] <- summary(model_f_pcb77)$coefficients['pheno_ct_female[, "PCB77"]', c(4,1,2)]
+}
+
+res_f_pcb77[, 4] <- p.adjust(res_f_pcb77[,1], method = "fdr")
+results_f_pcb77 <- as.data.frame(res_f_pcb77)
+results_f_pcb77$modules <- rownames(results_f_pcb77)
+unadjp_top_modules_f_pcb77 <- results_f_pcb77$modules[results_f_pcb77$`P-value:PCB77` < 0.01] #non
+
+# PCB 81
+res_f_pcb81 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcb81) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcb81) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCB81"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcb81 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCB81"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcb81[i,1:3] <- summary(model_f_pcb81)$coefficients['pheno_ct_female[, "PCB81"]', c(4,1,2)]
+}
+
+res_f_pcb81[, 4] <- p.adjust(res_f_pcb81[,1], method = "fdr")
+results_f_pcb81 <- as.data.frame(res_f_pcb81)
+results_f_pcb81$modules <- rownames(results_f_pcb81)
+unadjp_top_modules_f_pcb81 <- results_f_pcb81$modules[results_f_pcb81$`P-value:PCB81` < 0.01] #non
+
+# PCB 126
+res_f_pcb126 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcb126) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcb126) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCB126"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcb126 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCB126"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCB126"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "PCB126"]*pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCB126"]*pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcb126[i,1:3] <- summary(model_f_pcb126)$coefficients['pheno_ct_female[, "PCB126"]', c(4,1,2)]
+}
+
+res_f_pcb126[, 4] <- p.adjust(res_f_pcb126[,1], method = "fdr")
+results_f_pcb126 <- as.data.frame(res_f_pcb126)
+results_f_pcb126$modules <- rownames(results_f_pcb126)
+unadjp_top_modules_f_pcb126 <- results_f_pcb126$modules[results_f_pcb126$`P-value:PCB126` < 0.01] # 1 modules
+top_modules_f_pcb126 <- results_f_pcb126$modules[results_f_pcb126$`FDR:PCB126` < 0.05] # non
+
+# PCB 169
+res_f_pcb169 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcb169) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcb169) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCB169"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcb169 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCB169"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCB169"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCB169"]*pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcb169[i,1:3] <- summary(model_f_pcb169)$coefficients['pheno_ct_female[, "PCB169"]', c(4,1,2)]
+}
+
+res_f_pcb169[, 4] <- p.adjust(res_f_pcb169[,1], method = "fdr")
+results_f_pcb169 <- as.data.frame(res_f_pcb169)
+results_f_pcb169$modules <- rownames(results_f_pcb169)
+unadjp_top_modules_f_pcb169 <- results_f_pcb169$modules[results_f_pcb169$`P-value:PCB169` < 0.01] # non
+
+# PCDD48
+res_f_pcdd48 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdd48) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdd48) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD48"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdd48 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDD48"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCDD48"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdd48[i,1:3] <- summary(model_f_pcdd48)$coefficients['pheno_ct_female[, "PCDD48"]', c(4,1,2)]
+}
+
+res_f_pcdd48[, 4] <- p.adjust(res_f_pcdd48[,1], method = "fdr")
+results_f_pcdd48 <- as.data.frame(res_f_pcdd48)
+results_f_pcdd48$modules <- rownames(results_f_pcdd48)
+unadjp_top_modules_f_pcdd48 <- results_f_pcdd48$modules[results_f_pcdd48$`P-value:PCDD48` < 0.01] # non
+
+# PCDD54
+res_f_pcdd54 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdd54) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdd54) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD54"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdd54 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDD54"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCDD54"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdd54[i,1:3] <- summary(model_f_pcdd54)$coefficients['pheno_ct_female[, "PCDD54"]', c(4,1,2)]
+}
+
+res_f_pcdd54[, 4] <- p.adjust(res_f_pcdd54[,1], method = "fdr")
+results_f_pcdd54 <- as.data.frame(res_f_pcdd54)
+results_f_pcdd54$modules <- rownames(results_f_pcdd54)
+unadjp_top_modules_f_pcdd54 <- results_f_pcdd54$modules[results_f_pcdd54$`P-value:PCDD54` < 0.01] # non
+
+# PCDD66 
+res_f_pcdd66 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdd66) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdd66) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD66"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdd66 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDD66"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCDD66"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCDD66"]*pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdd66[i,1:3] <- summary(model_f_pcdd66)$coefficients['pheno_ct_female[, "PCDD66"]', c(4,1,2)]
+}
+
+res_f_pcdd66[, 4] <- p.adjust(res_f_pcdd66[,1], method = "fdr")
+results_f_pcdd66 <- as.data.frame(res_f_pcdd66)
+results_f_pcdd66$modules <- rownames(results_f_pcdd66)
+unadjp_top_modules_f_pcdd66 <- results_f_pcdd66$modules[results_f_pcdd66$`P-value:PCDD66` < 0.01] # 1 module
+top_modules_f_pcdd66 <- results_f_pcdd66$modules[results_f_pcdd66$`FDR:PCDD66`] # non
+
+# PCDD67
+res_f_pcdd67 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdd67) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdd67) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD67"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdd67 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDD67"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCDD67"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"] + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdd67[i,1:3] <- summary(model_f_pcdd67)$coefficients['pheno_ct_female[, "PCDD67"]', c(4,1,2)]
+}
+
+res_f_pcdd67[, 4] <- p.adjust(res_f_pcdd67[,1], method = "fdr")
+results_f_pcdd67 <- as.data.frame(res_f_pcdd67)
+results_f_pcdd67$modules <- rownames(results_f_pcdd67)
+unadjp_top_modules_f_pcdd67 <- results_f_pcdd67$modules[results_f_pcdd67$`P-value:PCDD67` < 0.01] # non
+
+# PCDD70
+res_f_pcdd70 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdd70) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdd70) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD70"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdd70 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDD70"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdd70[i,1:3] <- summary(model_f_pcdd70)$coefficients['pheno_ct_female[, "PCDD70"]', c(4,1,2)]
+}
+
+res_f_pcdd70[, 4] <- p.adjust(res_f_pcdd70[,1], method = "fdr")
+results_f_pcdd70 <- as.data.frame(res_f_pcdd70)
+results_f_pcdd70$modules <- rownames(results_f_pcdd70)
+unadjp_top_modules_f_pcdd70 <- results_f_pcdd70$modules[results_f_pcdd70$`P-value:PCDD70` < 0.01] # non
+
+# PCDD73
+res_f_pcdd73 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdd73) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdd73) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD73"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdd73 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDD73"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "PCDD73"]*pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCDD73"]*pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdd73[i,1:3] <- summary(model_f_pcdd73)$coefficients['pheno_ct_female[, "PCDD73"]', c(4,1,2)]
+}
+
+res_f_pcdd73[, 4] <- p.adjust(res_f_pcdd73[,1], method = "fdr")
+results_f_pcdd73 <- as.data.frame(res_f_pcdd73)
+results_f_pcdd73$modules <- rownames(results_f_pcdd73)
+unadjp_top_modules_f_pcdd73 <- results_f_pcdd73$modules[results_f_pcdd73$`P-value:PCDD73` < 0.01] # non
+
+# PCDD75
+res_f_pcdd75 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdd75) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdd75) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD75"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdd75 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDD75"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdd75[i,1:3] <- summary(model_f_pcdd75)$coefficients['pheno_ct_female[, "PCDD75"]', c(4,1,2)]
+}
+
+res_f_pcdd75[, 4] <- p.adjust(res_f_pcdd75[,1], method = "fdr")
+results_f_pcdd75 <- as.data.frame(res_f_pcdd75)
+results_f_pcdd75$modules <- rownames(results_f_pcdd75)
+unadjp_top_modules_f_pcdd75 <- results_f_pcdd75$modules[results_f_pcdd75$`P-value:PCDD75` < 0.01] # 2 modules
+top_modules_f_pcdd75 <- results_f_pcdd75$modules[results_f_pcdd75$`FDR:PCDD75`< 0.05] # non
+
+# PCDF114
+res_f_pcdf114 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdf114) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdf114) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF114"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdf114 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDF114"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCDF114"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] +  pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCDF114"]*pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdf114[i,1:3] <- summary(model_f_pcdf114)$coefficients['pheno_ct_female[, "PCDF114"]', c(4,1,2)]
+}
+
+res_f_pcdf114[, 4] <- p.adjust(res_f_pcdf114[,1], method = "fdr")
+results_f_pcdf114 <- as.data.frame(res_f_pcdf114)
+results_f_pcdf114$modules <- rownames(results_f_pcdf114)
+unadjp_top_modules_f_pcdf114 <- results_f_pcdf114$modules[results_f_pcdf114$`P-value:PCDF114` < 0.01] # non
+
+# PCDF118
+res_f_pcdf118 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdf118) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdf118) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF118"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdf118 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDF118"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCDF118"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] +  pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdf118[i,1:3] <- summary(model_f_pcdf118)$coefficients['pheno_ct_female[, "PCDF118"]', c(4,1,2)]
+}
+
+res_f_pcdf118[, 4] <- p.adjust(res_f_pcdf118[,1], method = "fdr")
+results_f_pcdf118 <- as.data.frame(res_f_pcdf118)
+results_f_pcdf118$modules <- rownames(results_f_pcdf118)
+unadjp_top_modules_f_pcdf118 <- results_f_pcdf118$modules[results_f_pcdf118$`P-value:PCDF118` < 0.01] # non
+
+# PCDF121
+res_f_pcdf121 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdf121) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdf121) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF121"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdf121 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDF121"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "PCDF121"]*pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCDF121"]*pheno_ct_female[, "highEduc_m_r"] +  pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdf121[i,1:3] <- summary(model_f_pcdf121)$coefficients['pheno_ct_female[, "PCDF121"]', c(4,1,2)]
+}
+
+res_f_pcdf121[, 4] <- p.adjust(res_f_pcdf121[,1], method = "fdr")
+results_f_pcdf121 <- as.data.frame(res_f_pcdf121)
+results_f_pcdf121$modules <- rownames(results_f_pcdf121)
+unadjp_top_modules_f_pcdf121 <- results_f_pcdf121$modules[results_f_pcdf121$`P-value:PCDF121` < 0.01] # 2 modules
+top_modules_f_pcdf121 <- results_f_pcdf121$modules[results_f_pcdf121$`FDR:PCDF121`< 0.05] # non
+
+# PCDF130
+res_f_pcdf130 <- matrix(data = NA, ncol = 6, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdf130) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdf130) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR", "CI.05", "CI.95"), c("PCDF130"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdf130 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDF130"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "PCDF130"]*pheno_ct_female[, "smoke_m_r"] +  pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCDF130"]*pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCDF130"]*pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdf130[i,1:3] <- summary(model_f_pcdf130)$coefficients['pheno_ct_female[, "PCDF130"]', c(4,1,2)]
+	res_f_pcdf130[i, 5:6] <- confint(model_f_pcdf130)['pheno_ct_female[, "PCDF130"]',c(1:2)]
+}
+
+res_f_pcdf130[, 4] <- p.adjust(res_f_pcdf130[,1], method = "fdr")
+results_f_pcdf130 <- as.data.frame(res_f_pcdf130)
+results_f_pcdf130$modules <- rownames(results_f_pcdf130)
+unadjp_top_modules_f_pcdf130 <- results_f_pcdf130$modules[results_f_pcdf130$`P-value:PCDF130` < 0.01] # 32 modules
+top_modules_f_pcdf130 <- results_f_pcdf130[results_f_pcdf130[,4] < 0.05, ] # 31 modules
+top_modules_f_pcdf130 <- top_modules_f_pcdf130[order(top_modules_f_pcdf130$`FDR:PCDF130`),]
+top_modules_f_pcdf130_round <- round(top_modules_f_pcdf130[,c(1:3,5:6)], digits = 2)
+top_modules_f_pcdf130_round$`FDR:PCDF130` <- round(top_modules_f_pcdf130[,4], digits = 4)
+top_modules_f_pcdf130_round$modules <- top_modules_f_pcdf130$modules
+
+top_modules_name_f_pcdf130 <- results_f_pcdf130$modules[results_f_pcdf130$`FDR:PCDF130` < 0.05]
+
+#save(top_modules_f_pcdf130, file = "path/top_modules_f_pcdf130.RData")
+#save(top_modules_f_pcdf130_round, file = "path/top_modules_f_pcdf130_round_CI.RData")
+
+### get discriptives of sig modules
+sig_modules <- data.frame(gsub("^ME", "", top_modules_f_pcdf130$modules))
+colnames(sig_modules) <- "module"
+module_var_expl <- eigencpgs_fsub$varExplained %>%
+  setNames(gsub("^ME", "", names(eigencpgs_fsub$eigengenes))) %>%
+  gather(key=module, value=varExpl)
+sig_module_var_expl <- left_join(sig_modules, module_var_expl)
+sig_module_var_expl$varproc <- (sig_module_var_expl$varExpl*100)
+sig_module_var_expl$varproc_round <- round(sig_module_var_expl$varproc, digit = 2)
+
+#save(sig_module_var_expl, file = "path/sig_module_var_expl.RData")
+
+# PCDF131
+res_f_pcdf131 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_fsub$eigengenes))
+rownames(res_f_pcdf131) <- colnames(eigencpgs_fsub$eigengenes)
+colnames(res_f_pcdf131) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF131"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_fsub$eigengenes)){
+	model_f_pcdf131 <- lm(eigencpgs_fsub$eigengenes[,i] ~ pheno_ct_female[, "PCDF131"] + pheno_ct_female[, "age_m"] + pheno_ct_female[, "dur_gest"] + pheno_ct_female[, "smoke_m_r"] + pheno_ct_female[, "weight_n"] + pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "PCDF131"]*pheno_ct_female[, "highEduc_m_r"] + pheno_ct_female[, "BMI_m"] + pheno_ct_female[, "CD4T"]  + pheno_ct_female[, "CD8T"] + pheno_ct_female[, "NK"] + pheno_ct_female[, "Mono"] + pheno_ct_female[,"Gran"] + pheno_ct_female[, "Bcell"] + pheno_ct_female[, "AMP_Plate"])
+	res_f_pcdf131[i,1:3] <- summary(model_f_pcdf131)$coefficients['pheno_ct_female[, "PCDF131"]', c(4,1,2)]
+}
+
+res_f_pcdf131[, 4] <- p.adjust(res_f_pcdf131[,1], method = "fdr")
+results_f_pcdf131 <- as.data.frame(res_f_pcdf131)
+results_f_pcdf131$modules <- rownames(results_f_pcdf131)
+unadjp_top_modules_f_pcdf131 <- results_f_pcdf131$modules[results_f_pcdf131$`P-value:PCDF131` < 0.01] # 4 modules
+top_modules_f_pcdf131 <- results_f_pcdf131$modules[results_f_pcdf131$`FDR:PCDF131`< 0.05] # non
+
+```
+
+# GO enrichment analysis
+
+```{r GO}
+# setups (some code in '# filter top modules') 
+allcpgs_fsub <- colnames(bVal_female_sub)
+
+top_modules_name_f_pcdf130r <- sub("*ME", "", top_modules_name_f_pcdf130)
+allmodelscpgs_f_pcdf130 <- cpg_to_module_fsub[cpg_to_module_fsub$module %in% top_modules_name_f_pcdf130r, ]
+#save(allmodelscpgs_f_pcdf130, file = "path/allcpgs_allsigmodels_f_pcdf130.RData")
+allcpgs_allmodel_f_pcdf130 <- as.character(allmodelscpgs_f_pcdf130$CpG)
+
+# annotate allcpgs_allsigmodels_f_pcdf130
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Locations")
+probeLoc <- as.data.frame(probeLoc)
+rownames(allcpgs_allsigmodels_f_pcdf130) <- allcpgs_allsigmodels_f_pcdf130$CpG
+probeLoc <- probeLoc[rownames(allcpgs_allsigmodels_f_pcdf130), ]
+cpg_annot <- cbind(allcpgs_allsigmodels_f_pcdf130, probeLoc)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Other")
+probeLoc <- probeLoc[rownames(allcpgs_allsigmodels_f_pcdf130), ]
+cpg_annot <- cbind(cpg_annot, probeLoc)
+cpg_annot_df <- as.data.frame(cpg_annot, optional = TRUE)
+#save(cpg_annot, file = "path/allcpgs_allsigmodels_f_pcdf130_annot.RData")
+
+# run GO on CpGs for each module seperatly - automaized 
+mod_cpgs_fsub_pcdf130 <- mod_cpgs_fsub[top_modules_name_f_pcdf130r]
+
+module_go_enrichments <- lapply(
+  setNames(top_modules_name_f_pcdf130r, top_modules_name_f_pcdf130r), 
+  function(mod) {
+    cpg_set <- mod_cpgs_fsub_pcdf130[[mod]]
+    gsaTbl <- gometh(sig.cpg = cpg_set, all.cpg = allcpgs_fsub, collection = "GO", array.type = "EPIC")
+    gsaTbl$GOID <- tibble::rownames_to_column(gsaTbl)
+    gsaTopResTbl <- arrange(filter(gsaTbl, FDR < 0.05), FDR)
+  })
+#saveRDS(module_go_enrichments, file = "path/module_go_enrichments_fsub_pcdf130.rds")
+
+## extract modules for which GO sig
+sig_go_modules <- c("red", "yellow", "white", "salmon", "lightcyan1", "brown")
+
+module_go_fsub_pcdf130_brown <- as.data.frame(module_go_enrichments[["brown"]]["GOID"])
+#write.table(module_go_fsub_pcdf130_brown, file = "path/module_go_fsub_pcdf130_brown.txt", sep = "\t", row.names = FALSE)
+
+module_go_fsub_pcdf130_red <- as.data.frame(module_go_enrichments[["red"]]["GOID"])
+#write.table(module_go_fsub_pcdf130_red, file = "path/module_go_fsub_pcdf130_red.txt", sep = "\t", row.names = FALSE)
+
+module_go_fsub_pcdf130_yellow <- as.data.frame(module_go_enrichments[["yellow"]]["GOID"])
+#write.table(module_go_fsub_pcdf130_yellow, file = "path/module_go_fsub_pcdf130_yellow.txt", sep = "\t", row.names = FALSE)
+
+module_go_fsub_pcdf130_white <- as.data.frame(module_go_enrichments[["white"]]["GOID"])
+#write.table(module_go_fsub_pcdf130_white, file = "path/module_go_fsub_pcdf130_white.txt", sep = "\t", row.names = FALSE)
+
+module_go_fsub_pcdf130_salmon <- as.data.frame(module_go_enrichments[["salmon"]]["GOID"])
+#write.table(module_go_fsub_pcdf130_salmon, file = "path/module_go_fsub_pcdf130_salmon.txt", sep = "\t", row.names = FALSE)
+
+module_go_fsub_pcdf130_lightcyan1 <- as.data.frame(module_go_enrichments[["lightcyan1"]]["GOID"])
+#write.table(module_go_fsub_pcdf130_lightcyan1, file = "path/module_go_fsub_pcdf130_lightcyan1.txt", sep = "\t", row.names = FALSE)
+
+## plot top10 GO-terms by most sig FDR in sig modules
+### brown module bar plot
+module_go_fsub_pcdf130_brown$GOID$logFDR <- -log10(module_go_fsub_pcdf130_brown$GOID$FDR)
+module_go_fsub_pcdf130_brown <- module_go_fsub_pcdf130_brown[order(module_go_fsub_pcdf130_brown$GOID$logFDR, decreasing = TRUE),]
+module_go_fsub_pcdf130_brown <- module_go_fsub_pcdf130_brown[1:10,]
+module_go_fsub_pcdf130_brown$rank <- c(10:1)
+
+barplot_brown <- ggplot(data = module_go_fsub_pcdf130_brown, aes(x = logFDR, y = rank, fill = rank)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "tan4", mid = "tan2", high = "tan4", space = "Lab", midpoint = 1) +
+  geom_text(aes(x = rep(0,nrow(module_go_fsub_pcdf130_brown)), label = paste(TERM, paste('(',ONTOLOGY,', ',rowname,')', sep = ""))), hjust = 0, color="black") +
+  theme_minimal() +
+  xlab("-log10(FDR adjusted p-value)") +
+  theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+barplot_brown
+
+### lightcyan1 module bar plot
+module_go_fsub_pcdf130_lightcyan1$GOID$logFDR <- -log10(module_go_fsub_pcdf130_lightcyan1$GOID$FDR)
+module_go_fsub_pcdf130_lightcyan1 <- module_go_fsub_pcdf130_lightcyan1[order(module_go_fsub_pcdf130_lightcyan1$GOID$logFDR, decreasing = TRUE),]
+module_go_fsub_pcdf130_lightcyan1 <- module_go_fsub_pcdf130_lightcyan1[1:7,]
+module_go_fsub_pcdf130_lightcyan1$rank <- c(7:1)
+module_go_fsub_pcdf130_lightcyan1$color <- c("cyan3", "cyan3", "cyan3", "cyan3", "cyan3", "cyan3", "cyan2")
+
+barplot_lightcyan1 <- ggplot(data = module_go_fsub_pcdf130_lightcyan1, aes(x = logFDR, y = rank, fill = color)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("cyan3" = "lightcyan3", "cyan2" = "lightcyan2")) + 
+  geom_text(aes(x = rep(0,nrow(module_go_fsub_pcdf130_lightcyan1)), label = paste(TERM, paste('(',ONTOLOGY,', ',rowname,')', sep = ""))), hjust = 0, color="black") +
+  theme_minimal() +
+  xlab("-log10(FDR adjusted p-value)") +
+  theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+barplot_lightcyan1
+
+### red module bar plot
+module_go_fsub_pcdf130_red$GOID$logFDR <- -log10(module_go_fsub_pcdf130_red$GOID$FDR)
+module_go_fsub_pcdf130_red <- module_go_fsub_pcdf130_red[order(module_go_fsub_pcdf130_red$GOID$logFDR, decreasing = TRUE),]
+module_go_fsub_pcdf130_red <- module_go_fsub_pcdf130_red[1:10,]
+module_go_fsub_pcdf130_red$rank <- c(10:1)
+
+barplot_red <- ggplot(data = module_go_fsub_pcdf130_red, aes(x = logFDR, y = rank, fill = rank)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "red3", mid = "red", high = "red3", space = "Lab", midpoint = 1) +
+  geom_text(aes(x = rep(0,nrow(module_go_fsub_pcdf130_red)), label = paste(TERM, paste('(',ONTOLOGY,', ',rowname,')', sep = ""))), hjust = 0, color="black") +
+  theme_minimal() +
+  xlab("-log10(FDR adjusted p-value)") +
+  theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+barplot_red
+
+### salmon module bar plot
+module_go_fsub_pcdf130_salmon$GOID$logFDR <- -log10(module_go_fsub_pcdf130_salmon$GOID$FDR)
+module_go_fsub_pcdf130_salmon <- module_go_fsub_pcdf130_salmon[order(module_go_fsub_pcdf130_salmon$GOID$logFDR, decreasing = TRUE),]
+module_go_fsub_pcdf130_salmon <- module_go_fsub_pcdf130_salmon[1:10,]
+module_go_fsub_pcdf130_salmon$rank <- c(10:1)
+
+barplot_salmon <- ggplot(data = module_go_fsub_pcdf130_salmon, aes(x = logFDR, y = rank, fill = rank)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "salmon4", mid = "salmon", high = "salmon4", space = "Lab", midpoint = 1) +
+  geom_text(aes(x = rep(0,nrow(module_go_fsub_pcdf130_salmon)), label = paste(TERM, paste('(',ONTOLOGY,', ',rowname,')', sep = ""))), hjust = 0, color="black") +
+  theme_minimal() +
+  xlab("-log10(FDR adjusted p-value)") +
+  theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+barplot_salmon
+
+### white module bar plot
+module_go_fsub_pcdf130_white$GOID$logFDR <- -log10(module_go_fsub_pcdf130_white$GOID$FDR)
+module_go_fsub_pcdf130_white <- module_go_fsub_pcdf130_white[order(module_go_fsub_pcdf130_white$GOID$logFDR, decreasing = TRUE),]
+module_go_fsub_pcdf130_white <- module_go_fsub_pcdf130_white[1:10,]
+module_go_fsub_pcdf130_white$rank <- c(10:1)
+
+barplot_white <- ggplot(data = module_go_fsub_pcdf130_white, aes(x = logFDR, y = rank, fill = rank)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "gray80", mid = "gray92", high = "gray80", space = "Lab", midpoint = 1) +
+  geom_text(aes(x = rep(0,nrow(module_go_fsub_pcdf130_white)), label = paste(TERM, paste('(',ONTOLOGY,', ',rowname,')', sep = ""))), hjust = 0, color="black") +
+  theme_minimal() +
+  xlab("-log10(FDR adjusted p-value)") +
+  theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+barplot_white
+
+### yellow module bar plot
+module_go_fsub_pcdf130_yellow$GOID$logFDR <- -log10(module_go_fsub_pcdf130_yellow$GOID$FDR)
+module_go_fsub_pcdf130_yellow <- module_go_fsub_pcdf130_yellow[order(module_go_fsub_pcdf130_yellow$GOID$logFDR, decreasing = TRUE),]
+module_go_fsub_pcdf130_yellow <- module_go_fsub_pcdf130_yellow[1:10,]
+module_go_fsub_pcdf130_yellow$rank <- c(10:1)
+
+barplot_yellow <- ggplot(data = module_go_fsub_pcdf130_yellow, aes(x = logFDR, y = rank, fill = rank)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "gold4", mid = "gold", high = "gold4", space = "Lab", midpoint = 1) +
+  geom_text(aes(x = rep(0,nrow(module_go_fsub_pcdf130_yellow)), label = paste(TERM, paste('(',ONTOLOGY,', ',rowname,')', sep = ""))), hjust = 0, color="black") +
+  theme_minimal() +
+  xlab("-log10(FDR adjusted p-value)") +
+  theme(
+    legend.position = "none",
+    panel.border = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+        axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+barplot_yellow
+
+
+## one grid plot of all six barplots
+grid.arrange(
+barplot_brown,
+barplot_lightcyan1,
+barplot_red,
+barplot_salmon,
+barplot_white,
+barplot_yellow,
+ncol=2)
+
+# prepare data to run GO on WebGestalt (http://www.webgestalt.org/)
+bVal_sub <- t(bVal_female_sub)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Locations")
+probeLoc <- as.data.frame(probeLoc)
+probeLoc <- probeLoc[rownames(bVal_sub), ]
+cpg_annot <- cbind(bVal_sub, probeLoc)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Other")
+probeLoc <- probeLoc[rownames(bVal_sub), ]
+cpg_annot <- cbind(cpg_annot, probeLoc)
+cpg_annot_df <- as.data.frame(cpg_annot, optional = TRUE)
+cpg_f_sub_genenames_only <- cpg_annot_df$UCSC_RefGene_Name
+
+#write.table(cpg_f_sub_genenames_only, file = "path/GO_WebGestalt/CpGs_f_sub_annotonly.txt", quote = FALSE, row.names = FALSE, col.names = FALSE)
+
+```
+
+# calculate models hub
+
+```{r top hub in each module}
+# prepare module assignment
+moduleColors_f <- wgcna_fsub$colors
+
+tophub_fsub <- chooseTopHubInEachModule(bVal_female_sub, colorh = moduleColors_f, power = 5, type = "unsigned", corFnc = "bicor")
+#saveRDS(tophub_fsub, file = "tophub_fsub2.rds")
+
+# annotate hubs
+hubs <- as.data.frame(hubs)
+names(hubs)[1] <- "cpg"
+hubs$module <- rownames(hubs)
+bVal_df_onlyannot <- as.data.frame(bVal_onlyannot)
+hubs_annot <- left_join(hubs, bVal_df_onlyannot)
+
+#save(hubs_annot, file = "hubs_fsub.RData")
+
+```
+
+# #############################
+# wgcna for male samples
+# #############################
+
+# analysis of power choise
+
+```{r analysis power choice}
+# choosing the soft-threshold power: analysis of network topology 
+powers <- c(c(1:10, seq(from = 12, to = 20, by = 2))) 
+soft_threshold_msub_cor <- pickSoftThreshold(bVal_male_sub, corFnc = cor, powerVector = powers, verbose = 5)
+
+# assess prober soft threshold choice by ploting results
+par(mfrow = c(1, 2))
+cex1 = 0.9
+
+## Scale-free topology fit index as a function of the soft-thresholding power
+pdf("plot_softthreshold_msub_cor.pdf")
+plot(soft_threshold_msub_cor$fitIndices[, 1], -sign(soft_threshold_msub_cor$fitIndices[, 3]) * soft_threshold_msub_cor$fitIndices[, 2],
+     xlab="Soft Threshold cor male sub (power)", 
+     ylab="Scale Free Topology Model Fit,signed R^2", 
+     type="n", main=paste("Scale independence"))
+abline(h=0.90,col="red");
+text(soft_threshold_msub_cor$fitIndices[, 1], -sign(soft_threshold_msub_cor$fitIndices[, 3]) * soft_threshold_msub_cor$fitIndices[, 2],
+     labels=powers, cex=cex1, col="red")
+dev.off()
+
+## Mean connectivity as a function of the soft-thresholding power
+pdf("plot_meanconnectivity_msub_cor.pdf")
+plot(soft_threshold_msub_cor$fitIndices[, 1], soft_threshold_msub_cor$fitIndices[, 5],
+     xlab="Soft Threshold cor male sub (power)", ylab="Mean Connectivity", type="n",
+     main=paste("Mean connectivity"))
+text(soft_threshold_msub_cor$fitIndices[, 1], soft_threshold_msub_cor$fitIndices[, 5], 
+     labels=powers, cex=cex1, col="red")
+dev.off()
+
+``` 
+
+# pre-cluster blocks
+
+```{r pre-cluster}
+# Pre-clustering using projective K-means
+pkm_msub <- projectiveKMeans(bVal_male_sub, verbose = 5)
+
+```
+
+# run wgcna
+
+```{r run wgcna}
+# Run WGCNA on beta values
+wgcna_msub <- blockwiseModules(bVal_male_sub,
+                                      blocks = pkm_msub$clusters,
+                                      power = 2,
+                                      networkType = "unsigned",
+                                      corType = "bicor", 
+                                      maxPOutliers = 0.10, 
+                                      saveTOMs=TRUE,
+                                      saveTOMFileBase="whiTOM_msub",
+                                      verbose=5)
+#saveRDS(wgcna_msub, file="wgcna_msub.rds")
+
+```
+
+# calculate module eigenCpGs (eigengenes)
+
+```{r eigenCpG}
+# Calculate module eigengenes
+MEs_msub <- moduleEigengenes(bVal_male_sub, wgcna_msub$colors, excludeGrey = TRUE)
+#saveRDS(MEs_msub, file="wagcna_eigencpgs_msub.rds")
+
+MEs_msub_inclgrey <- moduleEigengenes(bVal_male_sub, wgcna_msub$colors, excludeGrey = FALSE)
+#saveRDS(MEs_msub_inclgrey, file="wagcna_eigencpgs_msub_inclgrey.rds")
+
+```
+
+# get discriptive information on modules
+
+```{r descriptive modules}
+bVal_male_sub <- t(bVal_male_sub)
+wgcna_input_cpgs_msub <- rownames(bVal_male_sub)
+cpg_to_module_msub <- data.frame(CpG = wgcna_input_cpgs_msub, module = wgcna_msub$colors, 
+                          stringsAsFactors = FALSE)
+mod_cpgs_msub <- lapply(setNames(unique(wgcna_msub$colors),unique(wgcna_msub$colors)), function(m) wgcna_input_cpgs_msub[wgcna_msub$colors == m])
+mod_sizes_msub <- cpg_to_module_msub %>%
+  group_by(module) %>%
+  summarise(modSize=n())
+
+length(mod_cpgs_msub) 
+min(mod_sizes_msub$modSize) 
+sort(mod_sizes_msub$modSize, decreasing = TRUE)[2] 
+```
+
+# filter top modules
+
+```{r top modules}
+# PCB 77
+pheno_ct_male_pcb77_vp133 <- pheno_ct_male[-54,] # remove D_StdNr 133 due to outlier value in PCB77
+eigencpgs_msub$eigengenes_pcb77_vp133 <- eigencpgs_msub$eigengenes[-54,]
+
+res_m_pcb77 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes_pcb77_vp133))
+rownames(res_m_pcb77) <- colnames(eigencpgs_msub$eigengenes_pcb77_vp133)
+colnames(res_m_pcb77) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCB77"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes_pcb77_vp133)){
+	model_m_pcb77 <- lm(eigencpgs_msub$eigengenes_pcb77_vp133[,i] ~ pheno_ct_male_pcb77_vp133[, "PCB77"] + pheno_ct_male_pcb77_vp133[, "age_m"] + pheno_ct_male_pcb77_vp133[, "dur_gest"] + pheno_ct_male_pcb77_vp133[, "smoke_m_r"] + pheno_ct_male_pcb77_vp133[, "weight_n"] + pheno_ct_male_pcb77_vp133[, "highEduc_m_r"] + pheno_ct_male_pcb77_vp133[, "BMI_m"] + pheno_ct_male_pcb77_vp133[, "CD4T"]  + pheno_ct_male_pcb77_vp133[, "CD8T"] + pheno_ct_male_pcb77_vp133[, "NK"] + pheno_ct_male_pcb77_vp133[, "Mono"] + pheno_ct_male_pcb77_vp133[,"Gran"] + pheno_ct_male_pcb77_vp133[, "Bcell"] + pheno_ct_male_pcb77_vp133[, "AMP_Plate"])
+	res_m_pcb77[i,1:3] <- summary(model_m_pcb77)$coefficients['pheno_ct_male_pcb77_vp133[, "PCB77"]', c(4,1,2)]
+}
+
+res_m_pcb77[, 4] <- p.adjust(res_m_pcb77[,1], method = "fdr")
+results_m_pcb77 <- as.data.frame(res_m_pcb77)
+results_m_pcb77$modules <- rownames(results_m_pcb77)
+unadjp_top_modules_m_pcb77 <- results_m_pcb77$modules[results_m_pcb77$`P-value:PCB77` < 0.01] # 2 modules
+top_modules_m_pcb77 <- results_m_pcb77$modules[results_m_pcb77$`FDR:PCB77`< 0.05] # non
+
+# PCB 81
+res_m_pcb81 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcb81) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcb81) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCB81"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcb81 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCB81"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcb81[i,1:3] <- summary(model_m_pcb81)$coefficients['pheno_ct_male[, "PCB81"]', c(4,1,2)]
+}
+
+res_m_pcb81[, 4] <- p.adjust(res_m_pcb81[,1], method = "fdr")
+results_m_pcb81 <- as.data.frame(res_m_pcb81)
+results_m_pcb81$modules <- rownames(results_m_pcb81)
+unadjp_top_modules_m_pcb81 <- results_m_pcb81$modules[results_m_pcb81$`P-value:PCB81` < 0.01] # 11 modules
+top_modules_m_pcb81 <- results_m_pcb81$modules[results_m_pcb81$`FDR:PCB81`< 0.05] # non
+
+# PCB 126
+res_m_pcb126 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcb126) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcb126) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCB126"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcb126 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCB126"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCB126"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "PCB126"]*pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCB126"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcb126[i,1:3] <- summary(model_m_pcb126)$coefficients['pheno_ct_male[, "PCB126"]', c(4,1,2)]
+}
+
+res_m_pcb126[, 4] <- p.adjust(res_m_pcb126[,1], method = "fdr")
+results_m_pcb126 <- as.data.frame(res_m_pcb126)
+results_m_pcb126$modules <- rownames(results_m_pcb126)
+unadjp_top_modules_m_pcb126 <- results_m_pcb126$modules[results_m_pcb126$`P-value:PCB126` < 0.01] # non
+
+# PCB 169
+res_m_pcb169 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcb169) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcb169) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCB169"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcb169 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCB169"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCB169"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCB169"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcb169[i,1:3] <- summary(model_m_pcb169)$coefficients['pheno_ct_male[, "PCB169"]', c(4,1,2)]
+}
+
+res_m_pcb169[, 4] <- p.adjust(res_m_pcb169[,1], method = "fdr")
+results_m_pcb169 <- as.data.frame(res_m_pcb169)
+results_m_pcb169$modules <- rownames(results_m_pcb169)
+unadjp_top_modules_m_pcb169 <- results_m_pcb169$modules[results_m_pcb169$`P-value:PCB169` < 0.01] # non
+
+# PCDD48
+res_m_pcdd48 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdd48) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdd48) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD48"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdd48 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDD48"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDD48"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdd48[i,1:3] <- summary(model_m_pcdd48)$coefficients['pheno_ct_male[, "PCDD48"]', c(4,1,2)]
+}
+
+res_m_pcdd48[, 4] <- p.adjust(res_m_pcdd48[,1], method = "fdr")
+results_m_pcdd48 <- as.data.frame(res_m_pcdd48)
+results_m_pcdd48$modules <- rownames(results_m_pcdd48)
+unadjp_top_modules_m_pcdd48 <- results_m_pcdd48$modules[results_m_pcdd48$`P-value:PCDD48` < 0.01] # 2 modules
+top_modules_m_pcdd48 <- results_m_pcdd48$modules[results_m_pcdd48$`FDR:PCDD48`< 0.05] # non
+
+# PCDD54
+res_m_pcdd54 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdd54) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdd54) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD54"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdd54 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDD54"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDD54"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdd54[i,1:3] <- summary(model_m_pcdd54)$coefficients['pheno_ct_male[, "PCDD54"]', c(4,1,2)]
+}
+
+res_m_pcdd54[, 4] <- p.adjust(res_m_pcdd54[,1], method = "fdr")
+results_m_pcdd54 <- as.data.frame(res_m_pcdd54)
+results_m_pcdd54$modules <- rownames(results_m_pcdd54)
+unadjp_top_modules_m_pcdd54 <- results_m_pcdd54$modules[results_m_pcdd54$`P-value:PCDD54` < 0.01] # 5 modules
+top_modules_m_pcdd54 <- results_m_pcdd54$modules[results_m_pcdd54$`FDR:PCDD54`< 0.05] # non
+
+# PCDD48
+res_m_pcdd48 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdd48) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdd48) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD48"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdd48 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDD48"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDD48"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdd48[i,1:3] <- summary(model_m_pcdd48)$coefficients['pheno_ct_male[, "PCDD48"]', c(4,1,2)]
+}
+
+res_m_pcdd48[, 4] <- p.adjust(res_m_pcdd48[,1], method = "fdr")
+results_m_pcdd48 <- as.data.frame(res_m_pcdd48)
+results_m_pcdd48$modules <- rownames(results_m_pcdd48)
+unadjp_top_modules_m_pcdd48 <- results_m_pcdd48$modules[results_m_pcdd48$`P-value:PCDD48` < 0.01] # 2 modules
+top_modules_m_pcdd48 <- results_m_pcdd48$modules[results_m_pcdd48$`FDR:PCDD48`< 0.05] # non
+
+# PCDD66 
+res_m_pcdd66 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdd66) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdd66) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD66"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdd66 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDD66"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDD66"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "PCDD66"]*pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCDD66"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdd66[i,1:3] <- summary(model_m_pcdd66)$coefficients['pheno_ct_male[, "PCDD66"]', c(4,1,2)]
+}
+
+res_m_pcdd66[, 4] <- p.adjust(res_m_pcdd66[,1], method = "fdr")
+results_m_pcdd66 <- as.data.frame(res_m_pcdd66)
+results_m_pcdd66$modules <- rownames(results_m_pcdd66)
+unadjp_top_modules_m_pcdd66 <- results_m_pcdd66$modules[results_m_pcdd66$`P-value:PCDD66` < 0.01] # non
+
+# PCDD67
+res_m_pcdd67 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdd67) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdd67) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD67"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdd67 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDD67"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDD67"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCDD67"]*pheno_ct_male[, "highEduc_m_r"] +  pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdd67[i,1:3] <- summary(model_m_pcdd67)$coefficients['pheno_ct_male[, "PCDD67"]', c(4,1,2)]
+}
+
+res_m_pcdd67[, 4] <- p.adjust(res_m_pcdd67[,1], method = "fdr")
+results_m_pcdd67 <- as.data.frame(res_m_pcdd67)
+results_m_pcdd67$modules <- rownames(results_m_pcdd67)
+unadjp_top_modules_m_pcdd67 <- results_m_pcdd67$modules[results_m_pcdd67$`P-value:PCDD67` < 0.01] # 2 modules
+top_modules_m_pcdd67 <- results_m_pcdd67$modules[results_m_pcdd67$`FDR:PCDD67`< 0.05] # non
+
+# PCDD70
+res_m_pcdd70 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdd70) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdd70) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD70"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdd70 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDD70"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDD70"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "PCDD70"]*pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdd70[i,1:3] <- summary(model_m_pcdd70)$coefficients['pheno_ct_male[, "PCDD70"]', c(4,1,2)]
+}
+
+res_m_pcdd70[, 4] <- p.adjust(res_m_pcdd70[,1], method = "fdr")
+results_m_pcdd70 <- as.data.frame(res_m_pcdd70)
+results_m_pcdd70$modules <- rownames(results_m_pcdd70)
+unadjp_top_modules_m_pcdd70 <- results_m_pcdd70$modules[results_m_pcdd70$`P-value:PCDD70` < 0.01] # non
+
+# PCDD73
+res_m_pcdd73 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdd73) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdd73) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD73"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdd73 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDD73"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDD73"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "PCDD73"]*pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCDD73"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdd73[i,1:3] <- summary(model_m_pcdd73)$coefficients['pheno_ct_male[, "PCDD73"]', c(4,1,2)]
+}
+
+res_m_pcdd73[, 4] <- p.adjust(res_m_pcdd73[,1], method = "fdr")
+results_m_pcdd73 <- as.data.frame(res_m_pcdd73)
+results_m_pcdd73$modules <- rownames(results_m_pcdd73)
+unadjp_top_modules_m_pcdd73 <- results_m_pcdd73$modules[results_m_pcdd73$`P-value:PCDD73` < 0.01] # 1 module
+top_modules_m_pcdd73 <- results_m_pcdd73$modules[results_m_pcdd73$`FDR:PCDD73`< 0.05] # non
+
+# PCDD75
+res_m_pcdd75 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdd75) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdd75) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDD75"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdd75 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDD75"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDD75"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "PCDD75"]*pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCDD75"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdd75[i,1:3] <- summary(model_m_pcdd75)$coefficients['pheno_ct_male[, "PCDD75"]', c(4,1,2)]
+}
+
+res_m_pcdd75[, 4] <- p.adjust(res_m_pcdd75[,1], method = "fdr")
+results_m_pcdd75 <- as.data.frame(res_m_pcdd75)
+results_m_pcdd75$modules <- rownames(results_m_pcdd75)
+unadjp_top_modules_m_pcdd75 <- results_m_pcdd75$modules[results_m_pcdd75$`P-value:PCDD75` < 0.01] # 3 modules
+top_modules_m_pcdd75 <- results_m_pcdd75$modules[results_m_pcdd75$`FDR:PCDD75`< 0.05] # non
+
+# PCDF114
+res_m_pcdf114 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdf114) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdf114) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF114"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdf114 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDF114"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDF114"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] +  pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCDF114"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdf114[i,1:3] <- summary(model_m_pcdf114)$coefficients['pheno_ct_male[, "PCDF114"]', c(4,1,2)]
+}
+
+res_m_pcdf114[, 4] <- p.adjust(res_m_pcdf114[,1], method = "fdr")
+results_m_pcdf114 <- as.data.frame(res_m_pcdf114)
+results_m_pcdf114$modules <- rownames(results_m_pcdf114)
+unadjp_top_modules_m_pcdf114 <- results_m_pcdf114$modules[results_m_pcdf114$`P-value:PCDF114` < 0.01] # 1 module
+top_modules_m_pcdf114 <- results_m_pcdf114$modules[results_m_pcdf114$`FDR:PCDF114`< 0.05] # non
+
+# PCDF118
+res_m_pcdf118 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdf118) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdf118) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF118"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdf118 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDF118"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDF118"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] +  pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdf118[i,1:3] <- summary(model_m_pcdf118)$coefficients['pheno_ct_male[, "PCDF118"]', c(4,1,2)]
+}
+
+res_m_pcdf118[, 4] <- p.adjust(res_m_pcdf118[,1], method = "fdr")
+results_m_pcdf118 <- as.data.frame(res_m_pcdf118)
+results_m_pcdf118$modules <- rownames(results_m_pcdf118)
+unadjp_top_modules_m_pcdf118 <- results_m_pcdf118$modules[results_m_pcdf118$`P-value:PCDF118` < 0.01] # 2 modules
+top_modules_m_pcdf118 <- results_m_pcdf118$modules[results_m_pcdf118$`FDR:PCDF118`< 0.05] # non
+
+# PCDF114
+res_m_pcdf121 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdf121) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdf121) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF121"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdf121 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDF121"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDF121"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdf121[i,1:3] <- summary(model_m_pcdf121)$coefficients['pheno_ct_male[, "PCDF121"]', c(4,1,2)]
+}
+
+res_m_pcdf121[, 4] <- p.adjust(res_m_pcdf121[,1], method = "fdr")
+results_m_pcdf121 <- as.data.frame(res_m_pcdf121)
+results_m_pcdf121$modules <- rownames(results_m_pcdf121)
+unadjp_top_modules_m_pcdf121 <- results_m_pcdf121$modules[results_m_pcdf121$`P-value:PCDF121` < 0.01] # 2 modules
+top_modules_m_pcdf121 <- results_m_pcdf121$modules[results_m_pcdf121$`FDR:PCDF121`< 0.05] # non
+
+# PCDF130
+res_m_pcdf130 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdf130) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdf130) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF130"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdf130 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDF130"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "PCDF130"]*pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "PCDF130"]*pheno_ct_male[, "smoke_m_r"] +  pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCDF130"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCDF130"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdf130[i,1:3] <- summary(model_m_pcdf130)$coefficients['pheno_ct_male[, "PCDF130"]', c(4,1,2)]
+}
+
+res_m_pcdf130[, 4] <- p.adjust(res_m_pcdf130[,1], method = "fdr")
+results_m_pcdf130 <- as.data.frame(res_m_pcdf130)
+results_m_pcdf130$modules <- rownames(results_m_pcdf130)
+unadjp_top_modules_m_pcdf130 <- results_m_pcdf130$modules[results_m_pcdf130$`P-value:PCDF130` < 0.01] # non
+
+# PCDF131
+res_m_pcdf131 <- matrix(data = NA, ncol = 4, nrow = ncol(eigencpgs_msub$eigengenes))
+rownames(res_m_pcdf131) <- colnames(eigencpgs_msub$eigengenes)
+colnames(res_m_pcdf131) <- as.vector(outer(c("P-value", "RegCoeff", "SE", "FDR"), c("PCDF131"), paste, sep=":"))
+
+for(i in 1:ncol(eigencpgs_msub$eigengenes)){
+	model_m_pcdf131 <- lm(eigencpgs_msub$eigengenes[,i] ~ pheno_ct_male[, "PCDF131"] + pheno_ct_male[, "age_m"] + pheno_ct_male[, "dur_gest"] + pheno_ct_male[, "smoke_m_r"] + pheno_ct_male[, "weight_n"] + pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "PCDF131"]*pheno_ct_male[, "highEduc_m_r"] + pheno_ct_male[, "BMI_m"] + pheno_ct_male[, "CD4T"]  + pheno_ct_male[, "CD8T"] + pheno_ct_male[, "NK"] + pheno_ct_male[, "Mono"] + pheno_ct_male[,"Gran"] + pheno_ct_male[, "Bcell"] + pheno_ct_male[, "AMP_Plate"])
+	res_m_pcdf131[i,1:3] <- summary(model_m_pcdf131)$coefficients['pheno_ct_male[, "PCDF131"]', c(4,1,2)]
+}
+
+res_m_pcdf131[, 4] <- p.adjust(res_m_pcdf131[,1], method = "fdr")
+results_m_pcdf131 <- as.data.frame(res_m_pcdf131)
+results_m_pcdf131$modules <- rownames(results_m_pcdf131)
+unadjp_top_modules_m_pcdf131 <- results_m_pcdf131$modules[results_m_pcdf131$`P-value:PCDF131` < 0.01] # non
+
+```
+
+# calculate models hub
+
+```{r top hub in each module}
+# prepare module assignment
+moduleColors_m <- wgcna_msub$colors
+
+tophub_msub <- chooseTopHubInEachModule(bVal_male_sub, colorh = moduleColors_m, power = 2, type = "unsigned", corFnc = "bicor")
+#saveRDS(tophub_msub, file = "tophub_msub2.rds")
+```
+
+# #####################
+# sessionInfo
+
+```{r sessionInfo}
+
+sessionInfo()
+
+```
+

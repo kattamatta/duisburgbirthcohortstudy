@@ -1,0 +1,129 @@
+---
+title: "preprocess_DNAmData"
+author: "Katharina Mattonet"
+date: "21 September 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## attach libraries
+
+```{r libraries}
+library(RnBeads)
+library(limma)
+library(dplyr)
+library(impute)
+```
+
+
+## preparation of enviornment 
+
+```{r prep enviornment}
+data.dir <- "/path"
+idat.dir <- file.path(data.dir,"idat") 
+sample.anno <- file.path(data.dir, "Annotation_EPIC.csv")
+
+## path for analysis and report storage of target data
+analysis.dir <- file.path("/path  ", "analysis_sexstratified")
+
+report.dir <- file.path(analysis.dir, "reports")
+save.dir <- file.path(report.dir, "analysis")
+
+
+```
+
+## import data
+
+```{r data import}
+
+# import raw data of CpG targets (RnBeads)
+data.source <- c(idat.dir, sample.anno)
+result <- rnb.run.import(data.source = data.source, data.type = "infinium.idat.dir", dir.reports = report.dir)
+rnb.set <- result$rnb.set
+
+load("path/pheno_data_github.RData")
+
+# remove samples in rnb.set, that do not match a priori requirements in pheno data
+rnb.set <- remove.samples(rnb.set, rnb.set@pheno[["Sample_Name"]] %in% c("45","68", "77", "80", "127", "160", "162"))
+!rnb.set@pheno[["Sample_Name"]] %in% c("45", "68", "77", "80", "127", "160", "162") # all TRUE
+
+
+```
+
+## quality control
+
+```{r quality control}
+rnb.run.qc(rnb.set, report.dir)
+
+rnb.set <- remove.samples(rnb.set, rnb.set@pheno[["Sample_Name"]] %in% c("2", "4", "5", "6", "25", "40", "161")) 
+!rnb.set@pheno[["Sample_Name"]] %in% c("2", "4", "5", "6", "25", "40", "161") # all TRUE
+pheno_data <- pheno_data[ !(pheno_data$D_StdNr %in% c(2, 4, 5, 6, 25, 40, 161)), ]
+
+```
+
+## preprocess data
+
+```{r preprocess data}
+rnb.set.unfiltered <- rnb.set 
+nrow(meth(rnb.set.unfiltered)) # 866895
+
+rnb.options(filtering.cross.reactive = TRUE, filtering.sex.chromosomes.removal = FALSE, filtering.missing.value.quantile = 0)
+result_prepro <- rnb.run.preprocessing(rnb.set.unfiltered, dir.reports = report.dir) 
+rnb.set <- result_prepro$rnb.set
+rnb.set_noNA <- rnb.set
+nrow(meth(rnb.set_noNA)) # 760464
+
+# check distripution of M values in MDS plot
+rnb.options(identifiers.column = "Sample_Name")
+mVals_noNA <- mval(rnb.set_noNA, type = "sites", row.names = TRUE)
+plotMDS(mVals_noNA, top = 1000) # outliers Sample_Name 11, 49, 71
+
+# remove conspicouse samples from plotMDS
+rnb.set_noNA <- remove.samples(rnb.set_noNA, rnb.set_noNA@pheno[["Sample_Name"]] %in% c("11", "49", "71"))
+!rnb.set_noNA@pheno[["Sample_Name"]] %in% c("11", "49", "71") # all TREU
+pheno_data <- pheno_data[ !(pheno_data$D_StdNr %in% c(11, 49, 71)), ]
+
+# remove samples with swapped gender lable
+sex_k <- data.frame(pheno_data$D_StdNr, pheno_data$sex_n) # sex_n[0 == female, 1 == male]
+colnames(sex_k) <- c("Sample_Name", "sex_n")
+sex_p <- data.frame(rnb.set_noNA@pheno["Sample_Name"], rnb.set_noNA@pheno[["Predicted Male Probability"]])
+sex_com <- left_join(sex_k, sex_p, by = "Sample_Name")
+nomatch <- filter(sex_com, sex_n == "0" & rnb.set_noNA.pheno...Predicted.Male.Probability... > 0.8) # Sample_Name 101, 112
+nomatch2 <- filter(sex_com, sex_n == "1" & rnb.set_noNA.pheno...Predicted.Male.Probability... < 0.8) # Sample_Name 111
+nomatchs_sex <- rbind(nomatch2, nomatch)
+pheno_data <- pheno_data[ !(pheno_data$D_StdNr %in% c(101, 111, 112)), ]
+rnb.set_noNA <- remove.samples(rnb.set_noNA, rnb.set_noNA@pheno[["Sample_Name"]] %in% c("101", "111", "112"))
+!rnb.set_noNA@pheno[["Sample_Name"]] %in% c("101", "111", "112") # all TRUE
+```
+
+## caluclate beta and M-values
+```{r calcualte beta and M values}
+rnb.options(identifiers.column = "Sample_Name") 
+bVals_noNA <- meth(rnb.set_noNA, type = "sites", row.names = TRUE)
+
+rnb.options(identifiers.column = "Sample_Name") 
+mVals_noNA <- mval(rnb.set_noNA, type = "sites", row.names = TRUE)
+
+write.table(mVals_noNA, file = "path/mVal_noNA_RnB_N144.txt", sep = "\t", dec = ".", row.names = TRUE, col.names = TRUE)
+write.table(bVals_noNA, file = "path/bVal_noNA_RnB_N144.txt", sep = "\t", dec = ".", row.names = TRUE, col.names = TRUE)
+
+bVals_noNA_df <- as.data.frame(bVals_noNA)
+mVals_noNA_df <- as.data.frame(mVals_noNA)
+save(bVals_noNA_df, file = "path/bVal_github.RData")
+save(mVals_noNA_df, file = "path/mVal_github.RData")
+
+#save(pheno_data, file = "path/pheno_data_red_github.RData")
+
+```
+
+## save rnb.set
+
+```{r save rnb.set}
+# save as zip-file
+save.rnb.set(rnb.set_noNA, path = save.dir, archive = TRUE)
+
+```

@@ -1,0 +1,2836 @@
+---
+title: "EWAS_sexstratified"
+author: "Katharina Mattonet"
+date: "21 September 2020"
+output: html_document
+---
+
+## load libraries
+```{rload libraries}
+library(limma)
+library(car)
+library(Hmisc)
+library(dplyr)
+library(tidyr)
+library(psych)
+library(QuantPsyc)
+library(IlluminaHumanMethylationEPICanno.ilm10b4.hg19)
+library(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
+library(qqman)
+library(lumi)
+library(ENmix)
+library(DMRcate)
+library(RColorBrewer)
+library(missMethyl)
+library(matrixStats)
+library(car)
+library(nortest)
+library(fmsb)
+library(ggplot2)
+library(ggrepel)
+library(Gviz)
+
+```
+
+
+## load data
+```{r load data}
+load("C:/Users/mattokhq/Desktop/githubt_test/preprocess_DNAmData_github/analysis_sexstratified/mVal_github.RData")
+load("C:/Users/mattokhq/Desktop/githubt_test/preprocess_DNAmData_github/analysis_sexstratified/bVal_github.RData")
+load("C:/Users/mattokhq/Desktop/githubt_test/preprocess_phenoData_github/pheno_data_github.RData")
+load("C:/Users/mattokhq/Desktop/githubt_test/analysis_RnB_CellType/celltypes_estimates_github.RData")
+
+```
+
+## prepare data
+```{r prepare data}
+mVal <- as.matrix(mVals_noNA_df)
+bVal <- as.matrix(bVals_noNA_df)
+ct_estimate <- ct_ref_noNA_N144
+
+# remove samples that did not survive preprocessing of DNAm
+pheno_data <- pheno_data[ !(pheno_data$D_StdNr %in% c(2, 4, 5, 6, 11, 25, 40, 49, 71, 101, 111, 112, 161)), ]
+
+# get annotations for probes
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Locations")
+probeLoc <- as.data.frame(probeLoc)
+probeLoc <- probeLoc[rownames(mVal), ]
+mVal_annot <- cbind(mVal, probeLoc)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Other")
+probeLoc <- probeLoc[rownames(mVal), ]
+mVal_annot <- cbind(mVal_annot, probeLoc)
+mVal_annot_df <- as.data.frame(mVal_annot, optional = TRUE)
+
+mVal_onlyannot <- mVal_annot_df[145:174] # select relevant annotations
+
+pheno_ct <- left_join(pheno_data, ct_estimate, by = "D_StdNr")
+
+# subset data by sex
+pheno_ct_f <- pheno_ct[pheno_ct$sex_n == 0, ] # 0 = female
+pheno_ct_f$laufnummer <- c(1:74)
+pheno_ct_m <- pheno_ct[pheno_ct$sex_n == 1, ] # 1 = male
+pheno_ct_m$laufnummer <- c(1:70)
+ID_f <- as.character(pheno_ct_f$D_StdNr)
+ID_m <- as.character(pheno_ct_m$D_StdNr)
+
+mVal_f <- mVal[, ID_f]
+Ychr <- mVal_annot[mVal_annot$chr != "chrY",]
+CgPYchr <- rownames(Ychr)
+mVal_f <- mVal_f[CgPYchr, ] # with CpGs only on X chromose
+mVal_onlyannot_f <- mVal_onlyannot[CgPYchr,]
+mVal_onlyannot_m <- mVal_onlyannot
+
+mVal <- mVal[, ID_m] # with CpGs on X and Y chromosome
+
+bVal_f <- bVal[, ID_f]
+Ychr <- mVal_annot[mVal_annot$chr != "chrY",]
+CgPYchr <- rownames(Ychr)
+bVal_f <- bVal_f[CgPYchr, ] # with CpGs only on X chromose
+
+bVal_m <- bVal[, ID_m]
+
+plotMDS(mVal_f, top = 1000) # outlier D_StdNr 157
+plotMDS(mVal, top = 1000) # outlier D_StdNr 55
+
+pheno_ct_female <- pheno_ct_f[ !(pheno_ct_f$D_StdNr %in% 157), ]
+mVal_female <- mVal_f[,!colnames(mVal_f) %in% "157"]
+bVal_female <- bVal_f[,!colnames(bVal_f) %in% "157"]
+
+pheno_ct_male <- pheno_ct_m[ !(pheno_ct_m$D_StdNr %in% 55), ]
+mVal_male <- mVal[,!colnames(mVal) %in% "55"]
+bVal_male <- bVal_m[,!colnames(bVal_m) %in% "55"]
+
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Locations")
+probeLoc <- as.data.frame(probeLoc)
+probeLoc <- probeLoc[rownames(mVal_male), ]
+mVal_annot_male <- cbind(mVal_male, probeLoc)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Other")
+probeLoc <- probeLoc[rownames(mVal_male), ]
+mVal_annot_male <- cbind(mVal_annot_male, probeLoc)
+mVal_annot_male_df <- as.data.frame(mVal_annot_male, optional = TRUE)
+
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Locations")
+probeLoc <- as.data.frame(probeLoc)
+probeLoc <- probeLoc[rownames(bVal_male), ]
+bVal_annot_male <- cbind(bVal_male, probeLoc)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Other")
+probeLoc <- probeLoc[rownames(bVal_male), ]
+bVal_annot_male <- cbind(bVal_annot_male, probeLoc)
+bVal_annot_male_df <- as.data.frame(bVal_annot_male, optional = TRUE)
+
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Locations")
+probeLoc <- as.data.frame(probeLoc)
+probeLoc <- probeLoc[rownames(mVal_female), ]
+mVal_annot_female <- cbind(mVal_female, probeLoc)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Other")
+probeLoc <- probeLoc[rownames(mVal_female), ]
+mVal_annot_female <- cbind(mVal_annot_female, probeLoc)
+mVal_annot_female_df <- as.data.frame(mVal_annot_female, optional = TRUE)
+
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Locations")
+probeLoc <- as.data.frame(probeLoc)
+probeLoc <- probeLoc[rownames(bVal_female), ]
+bVal_annot_female <- cbind(bVal_female, probeLoc)
+probeLoc <- getAnnotation(IlluminaHumanMethylationEPICanno.ilm10b2.hg19, what = "Other")
+probeLoc <- probeLoc[rownames(bVal_female), ]
+bVal_annot_female <- cbind(bVal_annot_female, probeLoc)
+bVal_annot_female_df <- as.data.frame(bVal_annot_female, optional = TRUE)
+
+## plot beta and M values 
+densityPlot(bVal_female, main = "female")
+densityPlot(mVal_female, xlab = "M value", main = "female")
+densityPlot(bVal_male, main = "male")
+densityPlot(mVal_male, xlab = "M value", main = "male")
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCB77 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$nonlog_PCB77 ~ pheno_ct$sex_n) # not sig
+```
+
+### EWAS DMPs 
+
+```{r model pcb77_f}
+## chose which covariates are confounded with predictor
+#Boxplot(pheno_ct_female$PCB77)
+cor_data_pcb77_f <- data.frame(pheno_ct_female$PCB77, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcb77_f <- rcorr(as.matrix(cor_data_pcb77_f))
+cor_matrix_pcb77_f$r >= .8 # non -> no multicolinerity!
+cor_matrix_pcb77_f[["P"]][,"pheno_ct_female.PCB77"] # no sig (p<.01)
+
+## crate APA-table of correlation matrix
+### function
+corstarsl <- function(x){
+require(Hmisc)
+x <- as.matrix(x)
+R <- rcorr(x)$r
+p <- rcorr(x)$P
+p <- round(p, digits = 2)
+
+## define notions for significance levels; spacing is important.
+mystars <- ifelse(p < .01, "**", " ")
+
+## trunctuate the matrix that holds the correlations to two decimal
+R <- format(round(cbind(rep(-1.11, ncol(x)), R), 2))[,-1]
+
+## build a new matrix that includes the correlations with their apropriate stars
+Rnew <- matrix(paste(R, mystars, sep=""), ncol=ncol(x))
+diag(Rnew) <- paste(diag(R), " ", sep="")
+rownames(Rnew) <- colnames(x)
+colnames(Rnew) <- paste(colnames(x), "", sep="")
+
+## remove upper triangle
+Rnew <- as.matrix(Rnew)
+Rnew[upper.tri(Rnew, diag = TRUE)] <- ""
+Rnew <- as.data.frame(Rnew)
+
+## remove last column and return the matrix (which is now a data frame)
+Rnew <- cbind(Rnew[1:length(Rnew)-1])
+return(Rnew)
+} 
+### apply function to rcorr-matrix and subset data
+cor_data_pcb77_f_apa <- data.frame(pheno_ct_female$PCB77, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcb77f_apa <- as.data.frame(corstarsl(cor_data_pcb77_f_apa)[2:13,1])
+colnames(corrtable_pcb77f_apa) <- "PCB77_female"
+rownames(corrtable_pcb77f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+
+
+## model
+design_add_pcb77_f <- model.matrix(~ 
+                         PCB77 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_add_pcb77_f <- lmFit(mVal_female, design_add_pcb77_f)
+
+fit_add_e_pcb77_f <- eBayes(fit_add_pcb77_f, robust = TRUE)
+
+summary(decideTests(fit_add_e_pcb77_f)) # 0 cpg sig fpr PCB77
+
+#DMPs_pcb77_f <- topTable(fit_add_e_pcb77_f, number = Inf, coef = "PCB77", sort.by = "p", p.value = 1, genelist = mVal_onlyannot)
+
+```
+
+# ##############
+# Predictor: PCB77 - sex == male == 1
+# ##############
+
+```{r model pcb77_m}
+Boxplot(pheno_ct_male$PCB77) # row 55 == D_StdNr 133
+pheno_ct_male[54,]# 
+
+pheno_ct_male_pcb77_vp133 <- pheno_ct_male[-54,]
+mVal_male_pcb77_vp133 <- mVal_male[,-54]
+bVal_male_pcb77_vp133 <- bVal_male[,-54]
+
+## chose which covariates are confounded with predictor 
+cor_data_pcb77_m_vp133 <- data.frame(pheno_ct_male_pcb77_vp133$PCB77, pheno_ct_male_pcb77_vp133$weight_n, pheno_ct_male_pcb77_vp133$age_m, pheno_ct_male_pcb77_vp133$dur_gest, pheno_ct_male_pcb77_vp133$smoke_m_r, pheno_ct_male_pcb77_vp133$highEduc_m_r, pheno_ct_male_pcb77_vp133$BMI_m, pheno_ct_male_pcb77_vp133$CD4T, pheno_ct_male_pcb77_vp133$CD8T, pheno_ct_male_pcb77_vp133$NK, pheno_ct_male_pcb77_vp133$Mono, pheno_ct_male_pcb77_vp133$Gran, pheno_ct_male_pcb77_vp133$Bcell)
+cor_matrix_pcb77_m_vp133 <- rcorr(as.matrix(cor_data_pcb77_m_vp133))
+cor_matrix_pcb77_m_vp133$r>.8 # non -> no multicolinerity!
+cor_matrix_pcb77_m_vp133[["P"]][,"pheno_ct_male_pcb77_vp133.PCB77"] # non sig (p<.01)
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcb77_m_apa <- data.frame(pheno_ct_male$PCB77, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcb77m_apa <- as.data.frame(corstarsl(cor_data_pcb77_m_apa)[2:13,1])
+colnames(corrtable_pcb77m_apa) <- "PCB77_male"
+rownames(corrtable_pcb77m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(corrtable_pcb77f_apa, corrtable_pcb77m_apa)
+
+
+design_add_pcb77_m_vp133 <- model.matrix(~ 
+                         PCB77 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         PCB77 * Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male_pcb77_vp133)
+
+fit_add_pcb77_m_vp133 <- lmFit(mVal_male_pcb77_vp133, design_add_pcb77_m_vp133)
+
+fit_add_e_pcb77_m_vp133 <- eBayes(fit_add_pcb77_m_vp133, robust = TRUE)
+
+summary(decideTests(fit_add_e_pcb77_m_vp133)) # 0 cpg sig for PCB77
+
+#DMPs_pcb77_m <- topTable(fit_add_e_pcb77_m_vp133, number = Inf, coef = "PCB77", sort.by = "p", p.value = 1, genelist = mVal_onlyannot)
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCB81 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCB81 ~ pheno_ct$sex_n) # not sig
+```
+
+### EWAS DMPs 
+
+```{r model pcb81_f }
+hist(pheno_ct_female$PCB81)
+## chose which covariates are confounded with predictor 
+cor_data_pcb81_f <- data.frame(pheno_ct_female$PCB81, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcb81_f <- rcorr(as.matrix(cor_data_pcb81_f))
+cor_matrix_pcb81_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcb81_f[["P"]][,"pheno_ct_female.PCB81"] # non sig (p<.01)
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcb81_f_apa <- data.frame(pheno_ct_female$PCB81, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcb81f_apa <- as.data.frame(corstarsl(cor_data_pcb81_f_apa)[2:13,1])
+colnames(corrtable_pcb81f_apa) <- "PCB81_female"
+rownames(corrtable_pcb81f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcb81f_apa)
+
+## model 
+design_add_pcb81_f <- model.matrix(~ 
+                         PCB81 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_add_pcb81_f <- lmFit(mVal_female, design_add_pcb81_f)
+
+fit_add_e_pcb81_f <- eBayes(fit_add_pcb81_f, robust = TRUE)
+
+summary(decideTests(fit_add_e_pcb81_f)) # 0 cpg sig for PCB81
+
+#DMPs_pcb81_f <- topTable(fit_add_e_pcb81_f, number = 10, coef = "PCB81", p.value = 0.05, genelist = mVal_onlyannot)
+
+```
+
+# ##############
+# Predictor: PCB81 - sex == male == 1
+# ##############
+
+## examine mVal for LIMMA
+
+```{r model  pcb81_m}
+hist(pheno_ct_male$PCB81)
+## chose which covariates are confounded with predictor 
+cor_data_pcb81_m <- data.frame(pheno_ct_male$PCB81, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcb81_m <- rcorr(as.matrix(cor_data_pcb81_m))
+cor_matrix_pcb81_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcb81_m[["P"]][,"pheno_ct_male.PCB81"] # # non sig (p<.01)
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcb81_m_apa <- data.frame(pheno_ct_male$PCB81, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcb81m_apa <- as.data.frame(corstarsl(cor_data_pcb81_m_apa)[2:13,1])
+colnames(corrtable_pcb81m_apa) <- "PCB81_male"
+rownames(corrtable_pcb81m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcb81m_apa)
+
+## model
+design_add_pcb81_m <- model.matrix(~ 
+                         PCB81 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_add_pcb81_m <- lmFit(mVal_male, design_add_pcb81_m)
+
+fit_add_e_pcb81_m <- eBayes(fit_add_pcb81_m, robust = TRUE)
+
+summary(decideTests(fit_add_e_pcb81_m)) # 0 cpg sig for PCB81
+
+#DMPs_pcb81_m <- topTable(fit_add_e_pcb81_m, number = 10, coef = "PCB81", p.value = 0.05, genelist = mVal_onlyannot)
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCB126 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCB126 ~ pheno_ct$sex_n) # not sig
+```
+
+```{r model pcb126_f}
+hist(pheno_ct_female$PCB126)
+## chose which covariates are confounded with predictor 
+cor_data_pcb126_f <- data.frame(pheno_ct_female$PCB126, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcb126_f <- rcorr(as.matrix(cor_data_pcb126_f))
+cor_matrix_pcb126_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcb126_f[["P"]][,"pheno_ct_female.PCB126"] # sig age_m, smoke_m_r, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcb126_f_apa <- data.frame(pheno_ct_female$PCB126, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcb126f_apa <- as.data.frame(corstarsl(cor_data_pcb126_f_apa)[2:13,1])
+colnames(corrtable_pcb126f_apa) <- "PCB126_female"
+rownames(corrtable_pcb126f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcb126f_apa)
+
+## model 
+design_i_pcb126_f <- model.matrix(~ 
+                         PCB126 + 
+                         age_m +
+                         PCB126 * age_m + 
+                         dur_gest + 
+                         smoke_m_r +
+                         PCB126 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         PCB126 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcb126_f <- lmFit(mVal_female, design_i_pcb126_f)
+
+fit_i_e_pcb126_f <- eBayes(fit_i_pcb126_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcb126_f)) # 0 cpg sig for PCB 126
+
+#DMP_pcb126_f <- topTable(fit_i_e_pcb126_f, number = 10, coef = "PCB126", p.value = 0.05, genelist = mVal_onlyannot)
+
+```
+
+# ##############
+# Predictor: PCB126 - sex == male == 1
+# ##############
+
+```{r model pcb126_m}
+hist(pheno_ct_male$PCB126)
+## chose which covariates are confounded with predictor 
+cor_data_pcb126_m <- data.frame(pheno_ct_male$PCB126, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcb126_m <- rcorr(as.matrix(cor_data_pcb126_m))
+cor_matrix_pcb126_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcb126_m[["P"]][, "pheno_ct_male.PCB126"] # sig age_m, smoke_m_r, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcb126_m_apa <- data.frame(pheno_ct_male$PCB126, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcb126m_apa <- as.data.frame(corstarsl(cor_data_pcb126_m_apa)[2:13,1])
+colnames(corrtable_pcb126m_apa) <- "PCB126_male"
+rownames(corrtable_pcb126m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcb126m_apa)
+
+## model
+design_i_pcb126_m <- model.matrix(~ 
+                         PCB126 + 
+                         age_m +
+                         PCB126 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCB126 * smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCB126 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcb126_m <- lmFit(mVal_male, design_i_pcb126_m)
+
+fit_i_e_pcb126_m <- eBayes(fit_i_pcb126_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcb126_m)) # 66 cpg sig for PCB126
+
+DMPs_pcb126_m <- topTable(fit_i_e_pcb126_m, number = Inf, coef = "PCB126", p.value = 0.05, genelist = mVal_onlyannot)
+
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcb126_m), pheno = pheno_ct_male$PCB126, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "m_PCB126")
+
+CpG_pcb126_m <- rownames(DMPs_pcb126_m)
+keepCpG_pcb126_m <- c("cg02887499", "cg04423493", "cg05889395", "cg14574369", "cg02915720", "cg07143052", "cg15657261", "cg08682582", "cg07017737", "cg17130815", "cg15869663", "cg09173924")
+removeCpG_pcb126_m <- setdiff(CpG_pcb126_m, keepCpG_pcb126_m)
+length(CpG_pcb126_m) - length(removeCpG_pcb126_m) == length(keepCpG_pcb126_m)
+mVal_annot_propCpG_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcb126_m, ]) # outlier cpgs are unsystmetically on all chromosomes -> remove those CpGs from further analysis with pcddf
+
+# remove outlier CpGs
+mVal_male_redCpG_pcb126 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcb126_m, ]
+mVal_onlyannot_redCpG_pcb126_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcb126_m, ])
+bVal_male_redCpG_pcb126 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcb126_m, ]
+
+## model redCpG
+design_i_redCpG_pcb126_m <- model.matrix(~ 
+                         PCB126 + 
+                         age_m +
+                         PCB126 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCB126 * smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCB126 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcb126_m <- lmFit(mVal_male_redCpG_pcb126, design_i_redCpG_pcb126_m)
+
+fit_i_e_redCpG_pcb126_m <- eBayes(fit_i_redCpG_pcb126_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcb126_m)) # 4 sig cpgs for PCB126
+
+DMPs_pcb126_redCpG_m <- topTable(fit_i_e_redCpG_pcb126_m, number = Inf, coef = "PCB126", p.value = 0.05, genelist = mVal_onlyannot_redCpG_pcb126_m, confint = TRUE)
+
+par(mfrow = c(3,3))
+plotCpg(bVal_male_redCpG_pcb126, cpg = rownames(DMPs_pcb126_redCpG_m), pheno = pheno_ct_male$PCB126, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "m_PCB126")
+
+#save(DMPs_pcb126_redCpG_m, file = "path/DMPs_male_PCB126_redCpG_iModel.RData") 
+
+```
+
+### EWAS DMRs with dmrcate 
+
+```{r EWAS DMRs pcb126_m}
+design_i_redCpG_pcb126_m <- model.matrix(~ 
+                         PCB126 + 
+                         age_m +
+                         PCB126 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCB126 * smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCB126 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+myAnnotation_redCpG_pcb126_m <- cpg.annotate(mVal_male_redCpG_pcb126, datatype = "array", what = "M", analysis.type = "differential", design = design_i_redCpG_pcb126_m, contrasts = FALSE, coef = "PCB126", arraytype = "EPIC") # 4 DMPs, which are the same identified with limma (which(myAnnotation_redCpG_pcb126_m[["is.sig"]] == TRUE); myAnnotation_redCpG_pcb126_m[["ID"], 67599])
+
+DMRs_redCpG_pcb126_m <- dmrcate(myAnnotation_redCpG_pcb126_m, lambda = 1000, C = 2, min.cpgs = 2)
+DMRs_redCpG_pcb126_m$results # 1 sig DMR
+DMRs_redCpG_pcb126_m$cutoff
+
+DMRs_ranges_redCpG_pcb126_m <- extractRanges(DMRs_redCpG_pcb126_m, genome = "hg19")
+DMRs_redCpG_pcb126_m_df <- as.data.frame(DMRs_ranges_redCpG_pcb126_m)
+
+#save(DMRs_ranges_redCpG_pcb126_m, file = "path/DMR_male_PCB126_redCpG_iModel.RData")
+
+```
+
+### pathway gene ontology testing (GO)  
+
+```{r GO pcb126_m}
+DMPs_pcb126_redCpG_m$Names <- rownames(DMPs_pcb126_redCpG_m)
+sigCpGs_redCpG_pcb126_m <- DMPs_pcb126_redCpG_m$Names[DMPs_pcb126_redCpG_m$adj.P.Val < 0.05]
+length(sigCpGs_redCpG_pcb126_m) # 4
+allCpGs_redCpG_pcb126_m <- rownames(mVal_male_redCpG_pcb126)
+length(allCpGs_redCpG_pcb126_m) # 760410
+
+mappedEz_redCpG_pcb126_m <- getMappedEntrezIDs(sig.cpg = sigCpGs_redCpG_pcb126_m, all.cpg = allCpGs_redCpG_pcb126_m, array.type = "EPIC")
+
+godmp_redCpG_pcb126_m <- gometh(sig.cpg = sigCpGs_redCpG_pcb126_m, all.cpg = allCpGs_redCpG_pcb126_m, array.type = "EPIC", collection = "GO") # FDR = 1
+#save(godmp_redCpG_pcb126_m, file = "path/GO_DMPs_redCpG_male_PCB126_iModel.RData")
+
+
+## GO testing for DMRs
+godmr_redCpG_pcb126_m <- goregion(regions = DMRs_ranges_redCpG_pcb126_m, collection = "GO", array.type = "EPIC") # FDR = 1
+#save(godmr_redCpG_pcb126_m, file = "path/GO_DMR_redCpG_male_PCB126_iModel.RData")
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCB169 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCB169 ~ pheno_ct$sex_n) # not sig
+```
+
+```{r model pcb169_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcb169_f <- data.frame(pheno_ct_female$PCB169, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcb169_f <- rcorr(as.matrix(cor_data_pcb169_f))
+cor_matrix_pcb169_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcb169_f[["P"]][,"pheno_ct_female.PCB169"] # sig age_m, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcb169_f_apa <- data.frame(pheno_ct_female$PCB169, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcb169f_apa <- as.data.frame(corstarsl(cor_data_pcb169_f_apa)[2:13,1])
+colnames(corrtable_pcb169f_apa) <- "PCB169_female"
+rownames(corrtable_pcb169f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcb169f_apa)
+
+## model 
+design_i_pcb169_f <- model.matrix(~ 
+                         PCB169 + 
+                         age_m +
+                         PCB169 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCB169 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcb169_f <- lmFit(mVal_female, design_i_pcb169_f)
+
+fit_i_e_pcb169_f <- eBayes(fit_i_pcb169_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcb169_f)) # 3 cpg sig for PCB 169
+
+DMPs_pcb169_f <- topTable(fit_i_e_pcb169_f, number = Inf, coef = "PCB169", p.value = 0.05, genelist = mVal_onlyannot, confint = TRUE)
+par(mfrow = c(3,3))
+plotCpg(bVal_female , cpg = rownames(DMPs_pcb169_f), pheno = pheno_ct_female$PCB169, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCB169")
+CpG_pcb169_f <- rownames(DMPs_pcb169_f)
+keepCpG_pcb169_f <- "cg08931983"
+DMPs_redCpG_pcb169_f <- DMPs_pcb169_f[-c(1,2),]
+
+#save(DMPs_redCpG_pcb169_f_pcb169, file = "path/DMPs_female_EWAS_PCB169_iModel.RData") 
+
+```
+
+### pathway gene ontology testing (GO)  
+
+```{r GO pcb169_f}
+DMPs_pcb169_f$Names <- rownames(DMPs_pcb169_f)
+sigCpGs_pcb169_f <- DMPs_pcb169_f$Names[DMPs_pcb169_f$adj.P.Val < 0.05]
+length(sigCpGs_pcb169_f) # 3
+allCpGs_pcb169_f <- rownames(mVal_female)
+length(allCpGs_pcb169_f) # 760403
+
+mappedEz_pcb169_f <- getMappedEntrezIDs(sig.cpg = sigCpGs_pcb169_f, all.cpg = allCpGs_pcb169_f, array.type = "EPIC")
+
+godmp_pcb169_f <- gometh(sig.cpg = sigCpGs_pcb169_f, all.cpg = allCpGs_pcb169_f, array.type = "EPIC", collection = "GO") # DFR = 1
+
+#save(godmp_pcb169_f, file = "path/GO_DMPs_redCpG_female_PCB169_iModel.RData")
+
+```
+
+# ##############
+# Predictor: PCB169 - sex == male == 1
+# ##############
+
+```{r model pcb169_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcb169_m <- data.frame(pheno_ct_male$PCB169, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcb169_m <- rcorr(as.matrix(cor_data_pcb169_m))
+cor_matrix_pcb169_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcb169_m[["P"]][, "pheno_ct_male.PCB169"] # sig age_m, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcb169_m_apa <- data.frame(pheno_ct_male$PCB169, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcb169m_apa <- as.data.frame(corstarsl(cor_data_pcb169_m_apa)[2:13,1])
+colnames(corrtable_pcb169m_apa) <- "PCB169_male"
+rownames(corrtable_pcb169m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcb169m_apa)
+
+## model
+design_i_pcb169_m <- model.matrix(~ 
+                         PCB169 + 
+                         age_m +
+                         PCB169 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCB169 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcb169_m <- lmFit(mVal_male, design_i_pcb169_m)
+
+fit_i_e_pcb169_m <- eBayes(fit_i_pcb169_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcb169_m)) # 98 cpg sig for PCB169, 2 cpgs for PCB169*age_m, 13 for PCB169*highEduc_m_r
+
+DMPs_pcb169_m_pcb169 <- topTable(fit_i_e_pcb169_m, number = Inf, coef = "PCB169", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male , cpg = rownames(DMPs_pcb169_m_pcb169), pheno = pheno_ct_male$PCB169, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCB169")
+CpG_pcb169_m_pcb169 <- rownames(DMPs_pcb169_m_pcb169)
+keepCpG_pcb169_m_pcb169 <- c("cg02887499", "cg11550825", "cg05849676", "cg17130815", "cg06111627", "cg20460234", "cg11019750", "cg23574443", "cg07911225", "cg02915720", "cg27285278", "cg20280727", "cg06823112", "cg07143052", "cg11685510", "cg11995437", "cg00220632", "cg24421397", "cg23894287", "cg19925675", "cg12277532", "cg03054890", "cg05889395")
+removeCpG_pcb169_m_pcb169 <- setdiff(CpG_pcb169_m_pcb169, keepCpG_pcb169_m_pcb169)
+length(CpG_pcb169_m_pcb169) - length(keepCpG_pcb169_m_pcb169) == length(removeCpG_pcb169_m_pcb169)
+
+DMPs_pcb169_m_pcb169higheduc <- topTable(fit_i_e_pcb169_m, number = Inf, coef = "PCB169:highEduc_m_r", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male , cpg = rownames(DMPs_pcb169_m_pcb169higheduc), pheno = pheno_ct_male$PCB169*pheno_ct_male$highEduc_m_r, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCB169:HighEduc")
+CpG_pcb169_m_pcb169higheduc <- rownames(DMPs_pcb169_m_pcb169higheduc)
+keepCpG_pcb169_m_pcb169higheduc <- c("cg05164185", "cg27559462", "cg04093885")
+removeCpG_pcb169_m_pcb169higheduc <- setdiff(CpG_pcb169_m_pcb169higheduc, keepCpG_pcb169_m_pcb169higheduc)
+length(CpG_pcb169_m_pcb169higheduc) - length(keepCpG_pcb169_m_pcb169higheduc) == length(removeCpG_pcb169_m_pcb169higheduc)
+
+DMPs_pcb169_m_pcb169agem <- topTable(fit_i_e_pcb169_m, number = Inf, coef = "PCB169:age_m", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male , cpg = rownames(DMPs_pcb169_m_pcb169agem), pheno = pheno_ct_male$PCB169*pheno_ct_male$age_m, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCB169:agem")
+CpG_pcb169_m_pcb169agem <- rownames(DMPs_pcb169_m_pcb169agem)
+keepCpG_pcb169_m_pcb169agem <- "cg01705409"
+removeCpG_pcb169_m_pcb169agem <- setdiff(CpG_pcb169_m_pcb169agem, keepCpG_pcb169_m_pcb169agem)
+length(CpG_pcb169_m_pcb169agem) - length(keepCpG_pcb169_m_pcb169agem) == length(removeCpG_pcb169_m_pcb169agem)
+
+
+CpG_pcb169_m_1 <- union(CpG_pcb169_m_pcb169, CpG_pcb169_m_pcb169higheduc)
+CpG_pcb169_m_all <- union(CpG_pcb169_m_1, CpG_pcb169_m_pcb169agem)
+keepCpG_pcb169_m_1 <- union(keepCpG_pcb169_m_pcb169, keepCpG_pcb169_m_pcb169higheduc)
+keepCpG_pcb169_m_all <- union(keepCpG_pcb169_m_1, keepCpG_pcb169_m_pcb169agem)
+removeCpG_pcb169_m <- setdiff(CpG_pcb169_m_all, keepCpG_pcb169_m_all)
+length(CpG_pcb169_m_all) - length(removeCpG_pcb169_m) == length(keepCpG_pcb169_m_all)
+
+mVal_annot_propCpG_pcb169_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcb169_m, ]) # outlier cpgs are unsystmetically on all chromosomes
+
+# remove outlier CpGs
+mVal_male_redCpG_pcb169 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcb169_m, ]
+mVal_onlyannot_redCpG_pcb169_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcb169_m, ])
+bVal_male_redCpG_pcb169 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcb169_m, ]
+
+## model redCpGs
+design_i_redCpG_pcb169_m <- model.matrix(~ 
+                         PCB169 + 
+                         age_m +
+                         PCB169 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCB169 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcb169_m <- lmFit(mVal_male_redCpG_pcb169, design_i_redCpG_pcb169_m)
+
+fit_i_e_redCpG_pcb169_m <- eBayes(fit_i_redCpG_pcb169_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcb169_m)) # 0 cpg sig for PCB169
+
+#DMPs_redCpG_pcb169_m <- topTable(fit_i_e_redCpG_pcb169_m, number = Inf, coef = "PCB169", p.value = 0.05, genelist = mVal_onlyannot)
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDD48 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDD48 ~ pheno_ct$sex_n) # not sig
+```
+
+```{r model pcdd48_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd48_f <- data.frame(pheno_ct_female$PCDD48, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdd48_f <- rcorr(as.matrix(cor_data_pcdd48_f))
+cor_matrix_pcdd48_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd48_f[["P"]][,"pheno_ct_female.PCDD48"] # sig age_m
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd48_f_apa <- data.frame(pheno_ct_female$PCDD48, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdd48f_apa <- as.data.frame(corstarsl(cor_data_pcdd48_f_apa)[2:13,1])
+colnames(corrtable_pcdd48f_apa) <- "PCDD48_female"
+rownames(corrtable_pcdd48f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd48f_apa)
+
+## model 
+design_i_pcdd48_f <- model.matrix(~ 
+                         PCDD48 + 
+                         age_m +
+                         PCDD48 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdd48_f <- lmFit(mVal_female, design_i_pcdd48_f)
+
+fit_i_e_pcdd48_f <- eBayes(fit_i_pcdd48_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd48_f)) # 0 cpg sig for PCDD48
+
+
+```
+
+# ##############
+# Predictor: PCDD48 - sex == male == 1
+# ##############
+
+```{r model jpcdd48_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd48_m <- data.frame(pheno_ct_male$PCDD48, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdd48_m <- rcorr(as.matrix(cor_data_pcdd48_m))
+cor_matrix_pcdd48_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd48_m[["P"]][, "pheno_ct_male.PCDD48"] # sig age_m
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd48_m_apa <- data.frame(pheno_ct_male$PCDD48, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdd48m_apa <- as.data.frame(corstarsl(cor_data_pcdd48_m_apa)[2:13,1])
+colnames(corrtable_pcdd48m_apa) <- "PCDD48_male"
+rownames(corrtable_pcdd48m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd48m_apa)
+
+## model
+design_i_pcdd48_m <- model.matrix(~ 
+                         PCDD48 + 
+                         age_m +
+                         PCDD48 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdd48_m <- lmFit(mVal_male, design_i_pcdd48_m)
+
+fit_i_e_pcdd48_m <- eBayes(fit_i_pcdd48_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd48_m)) # 22 cpg sig for PCDD48, 13 cpgs for PCDD48*age_m
+
+DMPs_pcdd48_m_pcdd48 <- topTable(fit_i_e_pcdd48_m, number = Inf, coef = "PCDD48", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd48_m_pcdd48), pheno = pheno_ct_male$PCDD48, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD48")
+CpG_pcdd48_m_pcdd48 <- rownames(DMPs_pcdd48_m_pcdd48)
+keepCpG_pcdd48_m_pcdd48 <- c("cg00386551", "cg13421331", "cg19658522", "cg13626571", "cg11996456")
+removeCpG_pcdd48_m_pcdd48 <- setdiff(CpG_pcdd48_m_pcdd48, keepCpG_pcdd48_m_pcdd48)
+length(CpG_pcdd48_m_pcdd48) - length(keepCpG_pcdd48_m_pcdd48) == length(removeCpG_pcdd48_m_pcdd48)
+
+DMPs_pcdd48_m_pcdd48age <- topTable(fit_i_e_pcdd48_m, number = Inf, coef = "PCDD48:age_m", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd48_m_pcdd48age), pheno = pheno_ct_male$PCDD48*pheno_ct_male$age_m, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD48:agem")
+CpG_pcdd48_m_pcdd48agem <- rownames(DMPs_pcdd48_m_pcdd48age)
+keepCpG_pcdd48_m_pcdd48agem <- c("cg19658522", "cg15869663")
+removeCpG_pcdd48_m_pcdd48agem <- setdiff(CpG_pcdd48_m_pcdd48agem, keepCpG_pcdd48_m_pcdd48agem)
+length(CpG_pcdd48_m_pcdd48agem) - length(keepCpG_pcdd48_m_pcdd48agem) == length(removeCpG_pcdd48_m_pcdd48agem)
+
+removeCpG_pcdd48_m_all <- union(removeCpG_pcdd48_m_pcdd48, removeCpG_pcdd48_m_pcdd48agem)
+
+mVal_annot_propCpG_pcdd48_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdd48_m_all, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_male_redCpG_pcdd48 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcdd48_m_all, ]
+mVal_onlyannot_redCpG_pcdd48_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdd48_m_all, ])
+bVal_male_redCpG_pcdd48 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcdd48_m_all, ]
+
+## model redCpG
+design_i_redCpG_pcdd48_m <- model.matrix(~ 
+                         PCDD48 + 
+                         age_m +
+                         PCDD48 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcdd48_m <- lmFit(mVal_male_redCpG_pcdd48, design_i_redCpG_pcdd48_m)
+
+fit_i_e_redCpG_pcdd48_m <- eBayes(fit_i_redCpG_pcdd48_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdd48_m)) # 0 CpGs for PCDD48
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDD54 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDD54 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdd54_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd54_f <- data.frame(pheno_ct_female$PCDD54, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdd54_f <- rcorr(as.matrix(cor_data_pcdd54_f))
+cor_matrix_pcdd54_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd54_f[["P"]][,"pheno_ct_female.PCDD54"] # sig age_m 
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd54_f_apa <- data.frame(pheno_ct_female$PCDD54, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdd54f_apa <- as.data.frame(corstarsl(cor_data_pcdd54_f_apa)[2:13,1])
+colnames(corrtable_pcdd54f_apa) <- "PCDD54_female"
+rownames(corrtable_pcdd54f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd54f_apa)
+
+## model 
+design_i_pcdd54_f <- model.matrix(~ 
+                         PCDD54 + 
+                         age_m +
+                         PCDD54 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdd54_f <- lmFit(mVal_female, design_i_pcdd54_f)
+
+fit_i_e_pcdd54_f <- eBayes(fit_i_pcdd54_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd54_f)) # 0 cpg sig for PCDD54
+
+```
+
+# ##############
+# Predictor: PCDD54 - sex == male == 1
+# ##############
+
+```{r model pcdd54_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd54_m <- data.frame(pheno_ct_male$PCDD54, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdd54_m <- rcorr(as.matrix(cor_data_pcdd54_m))
+cor_matrix_pcdd54_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd54_m[["P"]][, "pheno_ct_male.PCDD54"] # sig age_m
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd54_m_apa <- data.frame(pheno_ct_male$PCDD54, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdd54m_apa <- as.data.frame(corstarsl(cor_data_pcdd54_m_apa)[2:13,1])
+colnames(corrtable_pcdd54m_apa) <- "PCDD54_male"
+rownames(corrtable_pcdd54m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd54m_apa)
+
+## model
+design_i_pcdd54_m <- model.matrix(~ 
+                         PCDD54 + 
+                         age_m +
+                         PCDD54 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdd54_m <- lmFit(mVal_male, design_i_pcdd54_m)
+
+fit_i_e_pcdd54_m <- eBayes(fit_i_pcdd54_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd54_m)) # 76 cpg sig for PCDD54, 48 cpgs for PCDD54*age_m
+
+DMPs_pcdd54_m_pcdd54 <- topTable(fit_i_e_pcdd54_m, number = Inf, coef = "PCDD54", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd54_m_pcdd54), pheno = pheno_ct_male$PCDD54, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD54")
+CpG_pcdd54_m_pcdd54 <- rownames(DMPs_pcdd54_m_pcdd54)
+keepCpG_pcdd54_m_pcdd54 <- c("cg20460234", "cg19925675", "cg11995437", "cg12817634", "cg05849676", "cg11685510", "cg25700699", "cg17651356", "cg00220632", "cg11996456", "cg00281323", "cg05973317", "cg11550825", "cg17558780", "cg02915720", "cg13626571", "cg07911225", "cg13377354", "cg23154011")
+removeCpG_pcdd54_m_pcdd54 <- setdiff(CpG_pcdd54_m_pcdd54, keepCpG_pcdd54_m_pcdd54)
+length(CpG_pcdd54_m_pcdd54) - length(keepCpG_pcdd54_m_pcdd54) == length(removeCpG_pcdd54_m_pcdd54)
+
+DMPs_pcdd54_m_pcdd54agem <- topTable(fit_i_e_pcdd54_m, number = Inf, coef = "PCDD54:age_m", p.value = 0.05, genelist = mVal_onlyannot)
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd54_m_pcdd54agem), pheno = pheno_ct_male$PCDD54*pheno_ct_male$highEduc_m_r, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD54:agem")
+CpG_pcdd54_m_pcdd54agem <- rownames(DMPs_pcdd54_m_pcdd54agem)
+keepCpG_pcdd54_m_pcdd54agem <- c("cg11995437", "cg17651356", "cg19925675", "cg12817634", "cg20460234", "cg13626571", "cg11685510", "cg24413819", "cg00220632", "cg25700699", "cg13377354")
+removeCpG_pcdd54_m_pcdd54agem <- setdiff(CpG_pcdd54_m_pcdd54agem, keepCpG_pcdd54_m_pcdd54agem)
+length(CpG_pcdd54_m_pcdd54agem) - length(keepCpG_pcdd54_m_pcdd54agem) == length(removeCpG_pcdd54_m_pcdd54agem)
+
+removeCpG_pcdd54_m <- union(removeCpG_pcdd54_m_pcdd54, removeCpG_pcdd54_m_pcdd54agem)
+
+mVal_annot_propCpG_pcdd54_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdd54_m, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_male_redCpG_pcdd54 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcdd54_m, ]
+mVal_onlyannot_redCpG_pcdd54_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdd54_m, ])
+bVal_male_redCpG_pcdd54 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcdd54_m, ]
+
+design_i_redCpG_pcdd54_m <- model.matrix(~ 
+                         PCDD54 + 
+                         age_m +
+                         PCDD54 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcdd54_m <- lmFit(mVal_male_redCpG_pcdd54, design_i_redCpG_pcdd54_m)
+
+fit_i_e_redCpG_pcdd54_m <- eBayes(fit_i_redCpG_pcdd54_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdd54_m)) # 0 sig for PCDD54
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDD66 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDD66 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdd66_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd66_f <- data.frame(pheno_ct_female$PCDD66, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdd66_f <- rcorr(as.matrix(cor_data_pcdd66_f))
+cor_matrix_pcdd66_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd66_f[["P"]][,"pheno_ct_female.PCDD66"] # sig age_m, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd66_f_apa <- data.frame(pheno_ct_female$PCDD66, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdd66f_apa <- as.data.frame(corstarsl(cor_data_pcdd66_f_apa)[2:13,1])
+colnames(corrtable_pcdd66f_apa) <- "PCDD66_female"
+rownames(corrtable_pcdd66f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd66f_apa)
+
+## model 
+design_i_pcdd66_f <- model.matrix(~ 
+                         PCDD66 + 
+                         age_m +
+                         PCDD66 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD66 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdd66_f <- lmFit(mVal_female, design_i_pcdd66_f)
+
+fit_i_e_pcdd66_f <- eBayes(fit_i_pcdd66_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd66_f)) # 0 cpg sig for PCDD66
+
+```
+
+# ##############
+# Predictor: PCDD66 - sex == male == 1
+# ##############
+
+```{r model pcdd66_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd66_m <- data.frame(pheno_ct_male$PCDD66, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdd66_m <- rcorr(as.matrix(cor_data_pcdd66_m))
+cor_matrix_pcdd66_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd66_m[["P"]][, "pheno_ct_male.PCDD66"] # sig age_m, smoke_m_r, higEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd66_m_apa <- data.frame(pheno_ct_male$PCDD66, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdd66m_apa <- as.data.frame(corstarsl(cor_data_pcdd66_m_apa)[2:13,1])
+colnames(corrtable_pcdd66m_apa) <- "PCDD66_male"
+rownames(corrtable_pcdd66m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd66m_apa)
+
+## model
+design_i_pcdd66_m <- model.matrix(~ 
+                         PCDD66 + 
+                         age_m +
+                         PCDD66 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD66 * smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD66 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdd66_m <- lmFit(mVal_male, design_i_pcdd66_m)
+
+fit_i_e_pcdd66_m <- eBayes(fit_i_pcdd66_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd66_m)) # 181 cpg sig for PCDD66, 30 cpgs for PCDD66*age_m, 4 for PCDD66*highEduc
+
+DMPs_pcdd66_m_pcdd66 <- topTable(fit_i_e_pcdd66_m, number = Inf, coef = "PCDD66", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd66_m_pcdd66), pheno = pheno_ct_male$PCDD66, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD66")
+CpG_pcdd66_m_pcdd66 <- rownames(DMPs_pcdd66_m_pcdd66)
+keepCpG_pcdd66_m_pcdd66 <- c("cg02887499", "cg05889395", "cg17130815", "cg23894287", "cg07143052", "cg27285278", "cg15247269", "cg07135157", "cg18883807", "cg20280727", "cg05849676", "cg24051516", "cg11550825", "cg21981270", "cg04423493", "cg16127683", "cg10295718", "cg15451272", "cg09173924", "cg02915720", "cg24735210", "cg14036884", "cg02846961", "cg06111627", "cg23154011", "cg20973769", "cg12193927", "cg15869663", "cg05177498", "cg20286094", "cg03935872", "cg09505722", "cg04877820", "cg25317746", "cg07123511", "cg11666555", "cg15657261", "cg20206319", "cg05529201", "cg14371056", "cg09615056", "cg01793179", "cg12277532", "cg17149859", "cg01471802", "cg22463596", "cg12086822", "cg12817634", "cg20255370", "cg00220632")
+removeCpG_pcdd66_m_pcdd66 <- setdiff(CpG_pcdd66_m_pcdd66, keepCpG_pcdd66_m_pcdd66)
+length(CpG_pcdd66_m_pcdd66) - length(keepCpG_pcdd66_m_pcdd66) == length(removeCpG_pcdd66_m_pcdd66)
+
+DMPs_pcdd66_m_pcdd66higheducmr <- topTable(fit_i_e_pcdd66_m, number = Inf, coef = "PCDD66:highEduc_m_r", p.value = 0.05, genelist = mVal_onlyannot)
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd66_m_pcdd66higheducmr), pheno = pheno_ct_male$PCDD66*pheno_ct_male$highEduc_m_r, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD66:highEducmr")
+CpG_pcdd66_m_pcdd66higheducmr <- rownames(DMPs_pcdd66_m_pcdd66higheducmr)
+keepCpG_pcdd66_m_pcdd66higheducmr <- c("cg05164185")
+removeCpG_pcdd66_m_pcdd66higheducmr <- setdiff(CpG_pcdd66_m_pcdd66higheducmr, keepCpG_pcdd66_m_pcdd66higheducmr)
+length(CpG_pcdd66_m_pcdd66higheducmr) - length(keepCpG_pcdd66_m_pcdd66higheducmr) == length(removeCpG_pcdd66_m_pcdd66higheducmr)
+
+DMPs_pcdd66_m_pcdd66agem <- topTable(fit_i_e_pcdd66_m, number = Inf, coef = "PCDD66:age_m", p.value = 0.05, genelist = mVal_onlyannot)
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd66_m_pcdd66agem), pheno = pheno_ct_male$PCDD66*pheno_ct_male$age_m, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD66:agem")
+CpG_pcdd66_m_pcdd66agem <- rownames(DMPs_pcdd66_m_pcdd66agem)
+keepCpG_pcdd66_m_pcdd66agem <- c("cg02887499", "cg00386551", "cg01705409", "cg07135157", "cg23894287", "cg24735210")
+removeCpG_pcdd66_m_pcdd66agem <- setdiff(CpG_pcdd66_m_pcdd66agem, keepCpG_pcdd66_m_pcdd66agem)
+length(CpG_pcdd66_m_pcdd66agem) - length(keepCpG_pcdd66_m_pcdd66agem) == length(removeCpG_pcdd66_m_pcdd66agem)
+
+removeCpG_pcdd66_m_1 <- union(removeCpG_pcdd66_m_pcdd66, removeCpG_pcdd66_m_pcdd66higheducmr)
+removeCpG_pcdd66_m_all <- union(removeCpG_pcdd66_m_1, removeCpG_pcdd66_m_pcdd66agem)
+
+mVal_annot_propCpG_pcdd66_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdd66_m_all, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_male_redCpG_pcdd66 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcdd66_m_all, ]
+mVal_onlyannot_redCpG_pcdd66_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdd66_m_all, ])
+bVal_male_redCpG_pcdd66 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcdd66_m_all, ]
+
+## model redCpG
+design_i_redCpG_pcdd66_m <- model.matrix(~ 
+                         PCDD66 + 
+                         age_m +
+                         PCDD66 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD66 * smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD66 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcdd66_m <- lmFit(mVal_male_redCpG_pcdd66, design_i_redCpG_pcdd66_m)
+
+fit_i_e_redCpG_pcdd66_m <- eBayes(fit_i_redCpG_pcdd66_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdd66_m)) # 28 sig CpG for PCDD66
+
+DMPs_redCpG_pcdd66_m <- topTable(fit_i_e_redCpG_pcdd66_m, number = Inf, coef = "PCDD66", p.value = 0.05, genelist = mVal_onlyannot_redCpG_pcdd66_m, confint = TRUE)
+
+par(mfrow = c(3,3))
+plotCpg(bVal_male_redCpG_pcdd66, cpg = rownames(DMPs_redCpG_pcdd66_m), pheno = pheno_ct_male$PCDD66, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "redCpG_PCDD66")
+
+
+#save(DMPs_redCpG_pcdd66_m, file = "path/DMPs_male_redCpGs_PCDD66_iModel.RData") 
+
+
+```
+
+### EWAS DMRs with dmrcate 
+
+```{r EWAS DMRs pcdd66_m}
+design_i_redCpG_pcdd66_m <- model.matrix(~ 
+                         PCDD66 + 
+                         age_m +
+                         PCDD66 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD66 * smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD66 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+myAnnotation_redCpG_pcdd66_m <- cpg.annotate(mVal_male_redCpG_pcdd66, datatype = "array", what = "M", analysis.type = "differential", design = design_i_redCpG_pcdd66_m, contrasts = FALSE, coef = "PCDD66", arraytype = "EPIC")
+
+DMRs_redCpG_pcdd66_m <- dmrcate(myAnnotation_redCpG_pcdd66_m, lambda = 1000, C = 2, min.cpgs = 2)
+DMRs_redCpG_pcdd66_m$results # 6 sig DMRs
+DMRs_redCpG_pcdd66_m$cutoff
+
+DMRs_ranges_redCpG_pcdd66_m <- extractRanges(DMRs_redCpG_pcdd66_m, genome = "hg19")
+DMRs_redCpG_pcdd66_m_df <- as.data.frame(DMRs_ranges_redCpG_pcdd66_m)
+
+#save(DMRs_ranges_redCpG_pcdd66_m, file = "path/DMRs_male_PCDD66_redCpG_iModel.RData")
+
+```
+
+### pathway gene ontology testing (GO)  
+
+```{r GO pcdd66_m}
+DMPs_redCpG_pcdd66_m$Names <- rownames(DMPs_redCpG_pcdd66_m)
+sigCpGs_redCpG_pcdd66_m <- DMPs_redCpG_pcdd66_m$Names[DMPs_redCpG_pcdd66_m$adj.P.Val < 0.05]
+allCpGs_redCpG_pcdd66_m <- rownames(mVal_male_redCpG_pcdd66)
+
+mappedEz_redCpG_pcdd66_m <- getMappedEntrezIDs(sig.cpg = sigCpGs_redCpG_pcdd66_m, all.cpg = allCpGs_redCpG_pcdd66_m, array.type = "EPIC")
+
+godmp_redCpG_pcdd66_m <- gometh(sig.cpg = sigCpGs_redCpG_pcdd66_m, all.cpg = allCpGs_redCpG_pcdd66_m, array.type = "EPIC", collection = "GO") # FDR = 1
+#save(godmp_redCpG_pcdd66_m, file = "ath/GO_DMPs_redCpG_male_PCDD66_iModel.RData")
+
+
+## GO testing for DMRs
+godmr_redCpG_pcdd66_m <- goregion(regions = DMRs_ranges_redCpG_pcdd66_m, collection = "GO", array.type = "EPIC") # FDR = 1
+
+#save(godmr_redCpG_pcdd66_m, file = "path/GO_DMRs_redCpG_male_PCDD66_iModel.RData")
+
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDD67 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDD67 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdd67_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd67_f <- data.frame(pheno_ct_female$PCDD67, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdd67_f <- rcorr(as.matrix(cor_data_pcdd67_f))
+cor_matrix_pcdd67_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd67_f[["P"]][,"pheno_ct_female.PCDD67"] # sig age_m
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd67_f_apa <- data.frame(pheno_ct_female$PCDD67, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdd67f_apa <- as.data.frame(corstarsl(cor_data_pcdd67_f_apa)[2:13,1])
+colnames(corrtable_pcdd67f_apa) <- "PCDD67_female"
+rownames(corrtable_pcdd67f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd67f_apa)
+
+## model 
+design_i_pcdd67_f <- model.matrix(~ 
+                         PCDD67 + 
+                         age_m +
+                         PCDD67 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdd67_f <- lmFit(mVal_female, design_i_pcdd67_f)
+
+fit_i_e_pcdd67_f <- eBayes(fit_i_pcdd67_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd67_f)) # 112 cpg sig for PCDD67, 41 for PCDD67*agem
+
+DMPs_pcdd67_f_pcdd67 <- topTable(fit_i_e_pcdd67_f, number = Inf, coef = "PCDD67", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_female, cpg = rownames(DMPs_pcdd67_f_pcdd67), pheno = pheno_ct_female$PCDD67, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD67")
+CpG_pcdd67_f_pcdd67 <- rownames(DMPs_pcdd67_f_pcdd67)
+keepCpG_pcdd67_f_pcdd67 <- c("cg22358250", "cg07612923", "cg07231544", "cg08814381", "cg17128892", "cg11839815", "cg12583822", "cg21437653", "cg11834440", "cg22381251", "cg15902957", "cg09702799", "cg18147584")
+removeCpG_pcdd67_f_pcdd67 <- setdiff(CpG_pcdd67_f_pcdd67, keepCpG_pcdd67_f_pcdd67)
+length(CpG_pcdd67_f_pcdd67) - length(keepCpG_pcdd67_f_pcdd67) == length(removeCpG_pcdd67_f_pcdd67)
+
+DMPs_pcdd67_f_pcdd67agem <- topTable(fit_i_e_pcdd67_f, number = Inf, coef = "PCDD67:age_m", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_female, cpg = rownames(DMPs_pcdd67_f_pcdd67agem), pheno = pheno_ct_female$PCDD67*pheno_ct_female$age_m, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD67:agem")
+CpG_pcdd67_f_pcdd67agem <- rownames(DMPs_pcdd67_f_pcdd67agem)
+keepCpG_pcdd67_f_pcdd67agem <- c("cg07612923", "cg22358250", "cg07231544")
+removeCpG_pcdd67_f_pcdd67agem <- setdiff(CpG_pcdd67_f_pcdd67agem, keepCpG_pcdd67_f_pcdd67agem)
+length(CpG_pcdd67_f_pcdd67agem) - length(keepCpG_pcdd67_f_pcdd67agem) == length(removeCpG_pcdd67_f_pcdd67agem)
+
+removeCpG_pcdd67_f_all <- union(removeCpG_pcdd67_f_pcdd67, removeCpG_pcdd67_f_pcdd67agem)
+
+mVal_annot_propCpG_pcdd67_f <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdd67_f_all, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_female_redCpG_pcdd67 <- mVal_female[!rownames(mVal_female) %in% removeCpG_pcdd67_f_all, ]
+mVal_onlyannot_redCpG_pcdd67_f <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdd67_f_all, ])
+bVal_female_redCpG_pcdd67 <- bVal_female[!rownames(bVal_female) %in% removeCpG_pcdd67_f_all, ]
+
+
+## model redCpG
+design_i_redCpG_pcdd67_f <- model.matrix(~ 
+                         PCDD67 + 
+                         age_m +
+                         PCDD67 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_redCpG_pcdd67_f <- lmFit(mVal_female_redCpG_pcdd67, design_i_redCpG_pcdd67_f)
+
+fit_i_e_redCpG_pcdd67_f <- eBayes(fit_i_redCpG_pcdd67_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdd67_f)) # 2 sig CpGs for PCDD67
+
+DMPs_redCpG_pcdd67_f <- topTable(fit_i_e_redCpG_pcdd67_f, number = Inf, coef = "PCDD67", p.value = 0.05, genelist = mVal_onlyannot_redCpG_pcdd67_f, confint = TRUE)
+
+plotCpg(bVal_female_redCpG_pcdd67, cpg = rownames(DMPs_redCpG_pcdd67_f), pheno = pheno_ct_female$PCDD67, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "redCpG_PCDD67")
+
+#save(DMPs_redCpG_pcdd67_f, file = "path/DMPs_female_redCpGs_PCDD67_iModel.RData") 
+
+
+```
+
+### EWAS DMRs with dmrcate 
+
+```{r EWAS DMRs pcdd67_f}
+design_i_redCpG_pcdd67_f <- model.matrix(~ 
+                         PCDD67 + 
+                         age_m +
+                         PCDD67 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+myAnnotation_redCpG_pcdd67_f <- cpg.annotate(mVal_female_redCpG_pcdd67, datatype = "array", what = "M", analysis.type = "differential", design = design_i_redCpG_pcdd67_f, contrasts = FALSE, coef = "PCDD67", arraytype = "EPIC")
+
+DMRs_redCpG_pcdd67_f <- dmrcate(myAnnotation_redCpG_pcdd67_f, lambda = 1000, C = 2, min.cpgs = 2)
+DMRs_redCpG_pcdd67_f$results # 6 sig DMR
+DMRs_redCpG_pcdd67_f$cutoff
+DMRs_redCpG_pcdd67_f[["results"]][["log.meanbetafc"]] <- log2(DMRs_redCpG_pcdd67_f[["results"]][["meanbetafc"]])
+
+DMRs_ranges_redCpG_pcdd67_f <- extractRanges(DMRs_redCpG_pcdd67_f, genome = "hg19")
+DMRs_redCpG_pcdd67_f_df <- as.data.frame(DMRs_ranges_redCpG_pcdd67_f)
+
+#save(DMRs_ranges_redCpG_pcdd67_f, file = "path/DMRs_female_PCDD67_redCpG_iModel.RData")
+
+
+```
+
+### pathway gene ontology testing (GO)  
+
+```{r GO pcdd67_f}
+DMPs_redCpG_pcdd67_f$Names <- rownames(DMPs_redCpG_pcdd67_f)
+sigCpGs_redCpG_pcdd67_f <- DMPs_redCpG_pcdd67_f$Names[DMPs_redCpG_pcdd67_f$adj.P.Val < 0.05]
+length(sigCpGs_redCpG_pcdd67_f) 
+allCpGs_redCpG_pcdd67_f <- rownames(mVal_female_redCpG_pcdd67)
+length(allCpGs_redCpG_pcdd67_f) 
+
+mappedEz_redCpG_pcdd67_f <- getMappedEntrezIDs(sig.cpg = sigCpGs_redCpG_pcdd67_f, all.cpg = allCpGs_redCpG_pcdd67_f, array.type = "EPIC")
+
+godmp_redCpG_pcdd67_f <- gometh(sig.cpg = sigCpGs_redCpG_pcdd67_f, all.cpg = allCpGs_redCpG_pcdd67_f, array.type = "EPIC", collection = "GO") # DFR = 1
+#save(godmp_redCpG_pcdd67_f, file = "path/GO_DMPs_redCpG_female_PCDD67_iModel.RData")
+
+
+## GO testing for DMRs
+godmr_redCpG_pcdd67_f <- goregion(regions = DMRs_ranges_redCpG_pcdd67_f, collection = "GO", array.type = "EPIC") # FDR = 1
+#save(godmr_redCpG_pcdd67_f, file = "path/GO_DMR_redCpG_female_PCDD67_iModel.csv", row.names = TRUE)
+
+```
+
+# ##############
+# Predictor: PCDD67 - sex == male == 1
+# ##############
+
+```{r model pcdd67_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd67_m <- data.frame(pheno_ct_male$PCDD67, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdd67_m <- rcorr(as.matrix(cor_data_pcdd67_m))
+cor_matrix_pcdd67_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd67_m[["P"]][, "pheno_ct_male.PCDD67"] # sig age_m, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd67_m_apa <- data.frame(pheno_ct_male$PCDD67, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdd67m_apa <- as.data.frame(corstarsl(cor_data_pcdd67_m_apa)[2:13,1])
+colnames(corrtable_pcdd67m_apa) <- "PCDD67_male"
+rownames(corrtable_pcdd67m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd67m_apa)
+
+## model
+design_i_pcdd67_m <- model.matrix(~ 
+                         PCDD67 + 
+                         age_m +
+                         PCDD67 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD67 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdd67_m <- lmFit(mVal_male, design_i_pcdd67_m)
+
+fit_i_e_pcdd67_m <- eBayes(fit_i_pcdd67_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd67_m)) # 81 cpg sig for PCDD67, 25 for PCDD67*highEduc
+
+DMPs_pcdd67_m_pcdd67 <- topTable(fit_i_e_pcdd67_m, number = Inf, coef = "PCDD67", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd67_m_pcdd67), pheno = pheno_ct_male$PCDD67, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD67")
+CpG_pcdd67_m_pcdd67 <- rownames(DMPs_pcdd67_m_pcdd67)
+keepCpG_pcdd67_m_pcdd67 <- c("cg00220632", "cg02887499", "cg19925675", "cg20460234", "cg17130815",  "cg12817634", "cg11346124", "cg10764219", "cg11685510", "cg11550825", "cg05849676", "cg11995437", "cg17514429", "cg10665050", "cg19704451", "cg12193927", "cg20280727", "cg23574443")
+removeCpG_pcdd67_m_pcdd67 <- setdiff(CpG_pcdd67_m_pcdd67, keepCpG_pcdd67_m_pcdd67)
+length(CpG_pcdd67_m_pcdd67) - length(keepCpG_pcdd67_m_pcdd67) == length(removeCpG_pcdd67_m_pcdd67)
+
+DMPs_pcdd67_m_pcdd67higheducmr <- topTable(fit_i_e_pcdd67_m, number = Inf, coef = "PCDD67:highEduc_m_r", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd67_m_pcdd67higheducmr), pheno = pheno_ct_male$PCDD67*pheno_ct_male$highEduc_m_r, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD67:highEducmr")
+CpG_pcdd67_m_pcdd67higheducmr <- rownames(DMPs_pcdd67_m_pcdd67higheducmr)
+keepCpG_pcdd67_m_pcdd67higheducmr <- c("cg05164185", "cg06866628", "cg26671558", "cg01240444", "cg02587129")
+removeCpG_pcdd67_m_pcdd67higheducmr <- setdiff(CpG_pcdd67_m_pcdd67higheducmr, keepCpG_pcdd67_m_pcdd67higheducmr)
+length(CpG_pcdd67_m_pcdd67higheducmr) - length(keepCpG_pcdd67_m_pcdd67higheducmr) == length(removeCpG_pcdd67_m_pcdd67higheducmr)
+
+removeCpG_pcdd67_m_all <- union(removeCpG_pcdd67_m_pcdd67, removeCpG_pcdd67_m_pcdd67higheducmr)
+
+mVal_annot_propCpG_pcdd67_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdd67_m_all, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_male_redCpG_pcdd67 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcdd67_m_all, ]
+mVal_onlyannot_redCpG_pcdd67_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdd67_m_all, ])
+bVal_male_redCpG_pcdd67 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcdd67_m_all, ]
+
+## model redCpG
+design_i_redCpG_pcdd67_m <- model.matrix(~ 
+                         PCDD67 + 
+                         age_m +
+                         PCDD67 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD67 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcdd67_m <- lmFit(mVal_male_redCpG_pcdd67, design_i_redCpG_pcdd67_m)
+
+fit_i_e_redCpG_pcdd67_m <- eBayes(fit_i_redCpG_pcdd67_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdd67_m)) # 0 sig CpG for PCDD67
+
+```
+
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDD70 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDD70 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdd70_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd70_f <- data.frame(pheno_ct_female$PCDD70, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdd70_f <- rcorr(as.matrix(cor_data_pcdd70_f))
+cor_matrix_pcdd70_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd70_f[["P"]][,"pheno_ct_female.PCDD70"] # non sig (p < 0.01)
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd70_f_apa <- data.frame(pheno_ct_female$PCDD70, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdd70f_apa <- as.data.frame(corstarsl(cor_data_pcdd70_f_apa)[2:13,1])
+colnames(corrtable_pcdd70f_apa) <- "PCDD70_female"
+rownames(corrtable_pcdd70f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd70f_apa)
+
+## model 
+design_add_pcdd70_f <- model.matrix(~ 
+                         PCDD70 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_add_pcdd70_f <- lmFit(mVal_female, design_add_pcdd70_f)
+
+fit_add_e_pcdd70_f <- eBayes(fit_add_pcdd70_f, robust = TRUE)
+
+summary(decideTests(fit_add_e_pcdd70_f)) # 0 cpg sig for PCDD70
+
+```
+
+# ##############
+# Predictor: PCDD70 - sex == male == 1
+# ##############
+
+```{r model pcdd70_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd70_m <- data.frame(pheno_ct_male$PCDD70, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdd70_m <- rcorr(as.matrix(cor_data_pcdd70_m))
+cor_matrix_pcdd70_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd70_m[["P"]][, "pheno_ct_male.PCDD70"] # sig age_m, smoke_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd70_m_apa <- data.frame(pheno_ct_male$PCDD70, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdd70m_apa <- as.data.frame(corstarsl(cor_data_pcdd70_m_apa)[2:13,1])
+colnames(corrtable_pcdd70m_apa) <- "PCDD70_male"
+rownames(corrtable_pcdd70m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd70m_apa)
+
+## model
+design_i_pcdd70_m <- model.matrix(~ 
+                         PCDD70 + 
+                         age_m +
+                         PCDD70 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD70 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdd70_m <- lmFit(mVal_male, design_i_pcdd70_m)
+
+fit_i_e_pcdd70_m <- eBayes(fit_i_pcdd70_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd70_m)) # 50 cpg sig for PCDD70, 36 for PCDD70*age_m
+
+DMPs_pcdd70_m_pcdd70 <- topTable(fit_i_e_pcdd70_m, number = Inf, coef = "PCDD70", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd70_m_pcdd70), pheno = pheno_ct_male$PCDD70, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD70")
+CpG_pcdd70_m_pcdd70 <- rownames(DMPs_pcdd70_m_pcdd70)
+keepCpG_pcdd70_m_pcdd70 <- c("cg02887499", "cg20983194", "cg06844272", "cg07135157", "cg02915720", "cg24735210", "cg19925675")
+removeCpG_pcdd70_m_pcdd70 <- setdiff(CpG_pcdd70_m_pcdd70, keepCpG_pcdd70_m_pcdd70)
+length(CpG_pcdd70_m_pcdd70) - length(keepCpG_pcdd70_m_pcdd70) == length(removeCpG_pcdd70_m_pcdd70)
+
+DMPs_pcdd70_m_pcdd70agem <- topTable(fit_i_e_pcdd70_m, number = Inf, coef = "PCDD70:age_m", p.value = 0.05, genelist = mVal_onlyannot)
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd70_m_pcdd70agem), pheno = pheno_ct_male$PCDD70*pheno_ct_male$age_m, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD70:agem")
+CpG_pcdd70_m_pcdd70agem <- rownames(DMPs_pcdd70_m_pcdd70agem)
+keepCpG_pcdd70_m_pcdd70agem <- c("cg02887499", "cg20983194", "cg06844272", "cg05889395", "cg23922819", "cg25317746")
+removeCpG_pcdd70_m_pcdd70agem <- setdiff(CpG_pcdd70_m_pcdd70agem, keepCpG_pcdd70_m_pcdd70agem)
+length(CpG_pcdd70_m_pcdd70agem) - length(keepCpG_pcdd70_m_pcdd70agem) == length(removeCpG_pcdd70_m_pcdd70agem)
+
+removeCpG_pcdd70_m_all <- union(removeCpG_pcdd70_m_pcdd70, removeCpG_pcdd70_m_pcdd70agem)
+
+mVal_annot_propCpG_pcdd70_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdd70_m_all, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_male_redCpG_pcdd70 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcdd70_m_all, ]
+mVal_onlyannot_redCpG_pcdd70_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdd70_m_all, ])
+bVal_male_redCpG_pcdd70 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcdd70_m_all, ]
+
+## model redCpG
+design_i_redCpG_pcdd70_m <- model.matrix(~ 
+                         PCDD70 + 
+                         age_m +
+                         PCDD70 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD70 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcdd70_m <- lmFit(mVal_male_redCpG_pcdd70, design_i_redCpG_pcdd70_m)
+
+fit_i_e_redCpG_pcdd70_m <- eBayes(fit_i_redCpG_pcdd70_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdd70_m)) # 1 sig CpG for PCDD70
+
+DMPs_redCpG_pcdd70_m <- topTable(fit_i_e_redCpG_pcdd70_m, number = Inf, coef = "PCDD70", p.value = 0.05, genelist = mVal_onlyannot_redCpG_pcdd70_m, confint = TRUE)
+
+plotCpg(bVal_male_redCpG_pcdd70, cpg = rownames(DMPs_redCpG_pcdd70_m), pheno = pheno_ct_male$PCDD70, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "redCpG_PCDD70")
+
+
+#save(DMPs_redCpG_pcdd70_m, file = "path/DMP_male_redCpGs_PCDD70_iModel.RData") 
+
+```
+
+### pathway gene ontology testing (GO)  
+
+```{r GO pcdd70_m}
+DMPs_redCpG_pcdd70_m$Names <- rownames(DMPs_redCpG_pcdd70_m)
+sigCpGs_redCpG_pcdd70_m <- DMPs_redCpG_pcdd70_m$Names[DMPs_redCpG_pcdd70_m$adj.P.Val < 0.05]
+length(sigCpGs_redCpG_pcdd70_m) 
+allCpGs_redCpG_pcdd70_m <- rownames(mVal_male_redCpG_pcdd70)
+length(allCpGs_redCpG_pcdd70_m) 
+
+mappedEz_redCpG_pcdd70_m <- getMappedEntrezIDs(sig.cpg = sigCpGs_redCpG_pcdd70_m, all.cpg = allCpGs_redCpG_pcdd70_m, array.type = "EPIC")
+
+godmp_redCpG_pcdd70_m <- gometh(sig.cpg = sigCpGs_redCpG_pcdd70_m, all.cpg = allCpGs_redCpG_pcdd70_m, array.type = "EPIC", collection = "GO") # FDR = 1
+
+#save(godmp_redCpG_pcdd70_m, file = "path/GO_DMP_redCpG_male_PCDD70_iModel.RData")
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDD73 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDD73 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdd73_f }
+## chose which covariates are confounded with predictor 
+cor_data_pcdd73_f <- data.frame(pheno_ct_female$PCDD73, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdd73_f <- rcorr(as.matrix(cor_data_pcdd73_f))
+cor_matrix_pcdd73_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd73_f[["P"]][,"pheno_ct_female.PCDD73"] # sig smoke_m_r, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd73_f_apa <- data.frame(pheno_ct_female$PCDD73, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdd73f_apa <- as.data.frame(corstarsl(cor_data_pcdd73_f_apa)[2:13,1])
+colnames(corrtable_pcdd73f_apa) <- "PCDD73_female"
+rownames(corrtable_pcdd73f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd73f_apa)
+
+## model 
+design_i_pcdd73_f <- model.matrix(~ 
+                         PCDD73 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD73 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD73 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdd73_f <- lmFit(mVal_female, design_i_pcdd73_f)
+
+fit_i_e_pcdd73_f <- eBayes(fit_i_pcdd73_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd73_f)) # 0 cpg sig for PCDD73
+
+```
+
+# ##############
+# Predictor: PCDD73 - sex == male == 1
+# ##############
+
+```{r model pcdd73_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd73_m <- data.frame(pheno_ct_male$PCDD73, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdd73_m <- rcorr(as.matrix(cor_data_pcdd73_m))
+cor_matrix_pcdd73_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd73_m[["P"]][, "pheno_ct_male.PCDD73"] # sig age_m, smoke_m_r, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd73_m_apa <- data.frame(pheno_ct_male$PCDD73, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdd73m_apa <- as.data.frame(corstarsl(cor_data_pcdd73_m_apa)[2:13,1])
+colnames(corrtable_pcdd73m_apa) <- "PCDD73_male"
+rownames(corrtable_pcdd73m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd73m_apa)
+
+## model
+design_i_pcdd73_m <- model.matrix(~ 
+                         PCDD73 + 
+                         age_m +
+                         PCDD73 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD73 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD73 * highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdd73_m <- lmFit(mVal_male, design_i_pcdd73_m)
+
+fit_i_e_pcdd73_m <- eBayes(fit_i_pcdd73_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd73_m)) # 68 cpg sig for PCDD73, 6 for PCDD73*smoke_m_r
+
+DMPs_pcdd73_m_pcdd73 <- topTable(fit_i_e_pcdd73_m, number = Inf, coef = "PCDD73", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd73_m_pcdd73), pheno = pheno_ct_male$PCDD73, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD73")
+CpG_pcdd73_m_pcdd73 <- rownames(DMPs_pcdd73_m_pcdd73)
+keepCpG_pcdd73_m_pcdd73 <- c("cg00220632", "cg18839991", "cg17179557")
+removeCpG_pcdd73_m_pcdd73 <- setdiff(CpG_pcdd73_m_pcdd73, keepCpG_pcdd73_m_pcdd73)
+length(CpG_pcdd73_m_pcdd73) - length(keepCpG_pcdd73_m_pcdd73) == length(removeCpG_pcdd73_m_pcdd73)
+
+DMPs_pcdd73_m_pcdd73smokemr <- topTable(fit_i_e_pcdd73_m, number = Inf, coef = "PCDD73:smoke_m_r1", p.value = 0.05, genelist = mVal_onlyannot)
+results_fit_i_e_pcdd73_m <- as.data.frame(decideTests(fit_i_e_pcdd73_m))
+order(results_fit_i_e_pcdd73_m$`PCDD73:smoke_m_r1`, decreasing = FALSE)
+order(results_fit_i_e_pcdd73_m$`PCDD73:smoke_m_r1`, decreasing = TRUE)
+sigCpGs_pcdd73_m_pcdd73smokemr <- results_fit_i_e_pcdd73_m[c(408403, 439514, 652073, 260619, 592023, 642104),]
+scatterplot(bVal_male["cg18860280",] ~ pheno_ct_male$PCDD73*pheno_ct_male$smoke_m_r)
+scatterplot(bVal_male["cg22626675",] ~ pheno_ct_male$PCDD73*pheno_ct_male$smoke_m_r)
+scatterplot(bVal_male["cg10545467",] ~ pheno_ct_male$PCDD73*pheno_ct_male$smoke_m_r)
+scatterplot(bVal_male["cg01466825",] ~ pheno_ct_male$PCDD73*pheno_ct_male$smoke_m_r)
+scatterplot(bVal_male["cg02126909",] ~ pheno_ct_male$PCDD73*pheno_ct_male$smoke_m_r)
+scatterplot(bVal_male["cg12349832",] ~ pheno_ct_male$PCDD73*pheno_ct_male$smoke_m_r)
+CpG_pcdd73_m_pcdd73smokemr <- rownames(DMPs_pcdd73_m_pcdd73smokemr)
+keepCpG_pcdd73_m_pcdd73smokemr <- c("cg01466825", "cg12349832")
+removeCpG_pcdd73_m_pcdd73smokemr <- setdiff(CpG_pcdd73_m_pcdd73smokemr, keepCpG_pcdd73_m_pcdd73smokemr)
+length(CpG_pcdd73_m_pcdd73smokemr) - length(keepCpG_pcdd73_m_pcdd73smokemr) == length(removeCpG_pcdd73_m_pcdd73smokemr)
+
+removeCpG_pcdd73_m_all <- union(removeCpG_pcdd73_m_pcdd73, removeCpG_pcdd73_m_pcdd73smokemr)
+
+mVal_annot_propCpG_pcdd73_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdd73_m_all, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_male_redCpG_pcdd73 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcdd73_m_all, ]
+mVal_onlyannot_redCpG_pcdd73_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdd73_m_all, ])
+bVal_male_redCpG_pcdd73 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcdd73_m_all, ]
+
+## model redCpG
+design_i_redCpG_pcdd73_m <- model.matrix(~ 
+                         PCDD73 + 
+                         age_m +
+                         PCDD73 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD73 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         PCDD73 * highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcdd73_m <- lmFit(mVal_male_redCpG_pcdd73, design_i_redCpG_pcdd73_m)
+
+fit_i_e_redCpG_pcdd73_m <- eBayes(fit_i_redCpG_pcdd73_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdd73_m)) # 0 sig CpG for PCDD73
+
+```
+
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDD75 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDD75 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdd75_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd75_f <- data.frame(pheno_ct_female$PCDD75, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdd75_f <- rcorr(as.matrix(cor_data_pcdd75_f))
+cor_matrix_pcdd75_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd75_f[["P"]][,"pheno_ct_female.PCDD75"] 
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd75_f_apa <- data.frame(pheno_ct_female$PCDD75, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdd75f_apa <- as.data.frame(corstarsl(cor_data_pcdd75_f_apa)[2:13,1])
+colnames(corrtable_pcdd75f_apa) <- "PCDD75_female"
+rownames(corrtable_pcdd75f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd75f_apa)
+
+## model 
+design_add_pcdd75_f <- model.matrix(~ 
+                         PCDD75 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_add_pcdd75_f <- lmFit(mVal_female, design_add_pcdd75_f)
+
+fit_add_e_pcdd75_f <- eBayes(fit_add_pcdd75_f, robust = TRUE)
+
+summary(decideTests(fit_add_e_pcdd75_f)) # 0 cpg sig for PCDD75
+
+```
+
+# ##############
+# Predictor: PCDD75 - sex == male == 1
+# ##############
+
+```{r model pcdd75_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdd75_m <- data.frame(pheno_ct_male$PCDD75, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdd75_m <- rcorr(as.matrix(cor_data_pcdd75_m))
+cor_matrix_pcdd75_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdd75_m[["P"]][, "pheno_ct_male.PCDD75"] # sig age_m, smoke_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdd75_m_apa <- data.frame(pheno_ct_male$PCDD75, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdd75m_apa <- as.data.frame(corstarsl(cor_data_pcdd75_m_apa)[2:13,1])
+colnames(corrtable_pcdd75m_apa) <- "PCDD75_male"
+rownames(corrtable_pcdd75m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdd75m_apa)
+
+## model
+design_i_pcdd75_m <- model.matrix(~ 
+                         PCDD75 + 
+                         age_m +
+                         PCDD75 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD75 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdd75_m <- lmFit(mVal_male, design_i_pcdd75_m)
+
+fit_i_e_pcdd75_m <- eBayes(fit_i_pcdd75_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdd75_m)) # 143 cpg sig for PCDD75, 101 for PCDD75:age_m, 1 for PCDD75*smoke_m_r 
+
+DMPs_pcdd75_m_pcdd75 <- topTable(fit_i_e_pcdd75_m, number = Inf, coef = "PCDD75", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd75_m_pcdd75), pheno = pheno_ct_male$PCDD75, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD75")
+CpG_pcdd75_m_pcdd75 <- rownames(DMPs_pcdd75_m_pcdd75)
+keepCpG_pcdd75_m_pcdd75 <- c("cg00386551", "cg17130815", "cg02887499", "cg09904987", "cg07143052", "cg09456134", "cg03443360", "cg05849676", "cg20286094", "cg12017722", "cg01388014", "cg02846961", "cg07135157", "cg11346124", "cg15869663", "cg05973317", "cg00586323", "cg10698762", "cg15247269", "cg18839991", "cg23894287", "cg14036884", "cg00220632", "cg09173924", "cg09563922", "cg20280727", "cg19925675", "cg26318111", "cg14354671", "cg07636338", "cg22653139")
+removeCpG_pcdd75_m_pcdd75 <- setdiff(CpG_pcdd75_m_pcdd75, keepCpG_pcdd75_m_pcdd75)
+length(CpG_pcdd75_m_pcdd75) - length(keepCpG_pcdd75_m_pcdd75) == length(removeCpG_pcdd75_m_pcdd75)
+
+DMPs_pcdd75_m_pcdd75smokemr <- topTable(fit_i_e_pcdd75_m, number = Inf, coef = "PCDD75:smoke_m_r1", p.value = 0.05, genelist = mVal_onlyannot)
+results_fit_i_e_pcdd75_m <- as.data.frame(decideTests(fit_i_e_pcdd75_m))
+order(results_fit_i_e_pcdd75_m$`PCDD75:smoke_m_r1`, decreasing = TRUE)
+sigCpGs_pcdd75_m_pcdd75smokemr <- results_fit_i_e_pcdd75_m[523342,]
+scatterplot(bVal_male["cg04067992",] ~ pheno_ct_male$PCDD75*pheno_ct_male$smoke_m_r)
+CpG_pcdd75_m_pcdd75smokemr <- rownames(DMPs_pcdd75_m_pcdd75smokemr)
+keepCpG_pcdd75_m_pcdd75smokemr <- c("cg04067992")
+removeCpG_pcdd75_m_pcdd75smokemr <- setdiff(CpG_pcdd75_m_pcdd75smokemr, keepCpG_pcdd75_m_pcdd75smokemr)
+length(CpG_pcdd75_m_pcdd75smokemr) - length(keepCpG_pcdd75_m_pcdd75smokemr) == length(removeCpG_pcdd75_m_pcdd75smokemr)
+
+DMPs_pcdd75_m_pcdd75agem <- topTable(fit_i_e_pcdd75_m, number = Inf, coef = "PCDD75:age_m", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdd75_m_pcdd75agem), pheno = pheno_ct_male$PCDD75*pheno_ct_male$age_m, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDD75:agem")
+CpG_pcdd75_m_pcdd75agem <- rownames(DMPs_pcdd75_m_pcdd75agem)
+keepCpG_pcdd75_m_pcdd75agem <- c("cg09456134", "cg02887499", "cg17130815", "cg12017722", "cg07143052", "cg02846961", "cg26318111", "cg01388014", "cg03443360", "cg11346124", "cg00220632", "cg18839991", "cg20460234", "cg00586323", "cg05849676", "cg05973317")
+removeCpG_pcdd75_m_pcdd75agem <- setdiff(CpG_pcdd75_m_pcdd75agem, keepCpG_pcdd75_m_pcdd75agem)
+length(CpG_pcdd75_m_pcdd75agem) - length(keepCpG_pcdd75_m_pcdd75agem) == length(removeCpG_pcdd75_m_pcdd75agem)
+
+removeCpG_pcdd75_m_1 <- union(removeCpG_pcdd75_m_pcdd75, removeCpG_pcdd75_m_pcdd75smokemr)
+removeCpG_pcdd75_m_all <- union(removeCpG_pcdd75_m_1, removeCpG_pcdd75_m_pcdd75agem)
+
+mVal_annot_propCpG_pcdd75_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdd75_m_all, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_male_redCpG_pcdd75 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcdd75_m_all, ]
+mVal_onlyannot_redCpG_pcdd75_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdd75_m_all, ])
+bVal_male_redCpG_pcdd75 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcdd75_m_all, ]
+
+## model redCpG
+design_i_redCpG_pcdd75_m <- model.matrix(~ 
+                         PCDD75 + 
+                         age_m +
+                         PCDD75 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDD75 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcdd75_m <- lmFit(mVal_male_redCpG_pcdd75, design_i_redCpG_pcdd75_m)
+
+fit_i_e_redCpG_pcdd75_m <- eBayes(fit_i_redCpG_pcdd75_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdd75_m)) # 1 sig CpG for PCDD75
+
+DMPs_redCpG_pcdd75_m <- topTable(fit_i_e_redCpG_pcdd75_m, number = Inf, coef = "PCDD75", p.value = 0.05, genelist = mVal_onlyannot_redCpG_pcdd75_m, confint = TRUE)
+
+plotCpg(bVal_male_redCpG_pcdd75, cpg = rownames(DMPs_redCpG_pcdd75_m), pheno = pheno_ct_male$PCDD75, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "redCpG_pcdd75")
+
+#save(DMPs_redCpG_pcdd75_m, file = "path/DMP_male_redCpGs_PCDD75_iModel.RData") 
+
+```
+
+### pathway gene ontology testing (GO)  
+
+```{r GO pcdd75_m}
+DMPs_redCpG_pcdd75_m$Names <- rownames(DMPs_redCpG_pcdd75_m)
+sigCpGs_redCpG_pcdd75_m <- DMPs_redCpG_pcdd75_m$Names[DMPs_redCpG_pcdd75_m$adj.P.Val < 0.05]
+length(sigCpGs_redCpG_pcdd75_m) 
+allCpGs_redCpG_pcdd75_m <- rownames(mVal_male_redCpG_pcdd75)
+length(allCpGs_redCpG_pcdd75_m) 
+
+mappedEz_redCpG_pcdd75_m <- getMappedEntrezIDs(sig.cpg = sigCpGs_redCpG_pcdd75_m, all.cpg = allCpGs_redCpG_pcdd75_m, array.type = "EPIC")
+
+godmp_redCpG_pcdd75_m <- gometh(sig.cpg = sigCpGs_redCpG_pcdd75_m, all.cpg = allCpGs_redCpG_pcdd75_m, array.type = "EPIC", collection = "GO") # FDR = 1
+
+#save(godmp_redCpG_pcdd75_m, file = "path/GO_DMP_redCpG_male_PCDD75_iModel.RData")
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDF114 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDF114 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdf114_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf114_f <- data.frame(pheno_ct_female$PCDF114, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdf114_f <- rcorr(as.matrix(cor_data_pcdf114_f))
+cor_matrix_pcdf114_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf114_f[["P"]][,"pheno_ct_female.PCDF114"] # sig age_m, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf114_f_apa <- data.frame(pheno_ct_female$PCDF114, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdf114f_apa <- as.data.frame(corstarsl(cor_data_pcdf114_f_apa)[2:13,1])
+colnames(corrtable_pcdf114f_apa) <- "PCDF114_female"
+rownames(corrtable_pcdf114f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf114f_apa)
+
+## model 
+design_i_pcdf114_f <- model.matrix(~ 
+                         PCDF114 + 
+                         age_m +
+                         PCDF114 * age_m + 
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDF114 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdf114_f <- lmFit(mVal_female, design_i_pcdf114_f)
+
+fit_i_e_pcdf114_f <- eBayes(fit_i_pcdf114_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdf114_f)) # 0 cpg sig for PCDF114
+
+```
+
+# ##############
+# Predictor: PCDF114 - sex == male == 1
+# ##############
+
+```{r model pcdf114_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf114_m <- data.frame(pheno_ct_male$PCDF114, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdf114_m <- rcorr(as.matrix(cor_data_pcdf114_m))
+cor_matrix_pcdf114_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf114_m[["P"]][, "pheno_ct_male.PCDF114"] # sig age_m, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf114_m_apa <- data.frame(pheno_ct_male$PCDF114, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdf114m_apa <- as.data.frame(corstarsl(cor_data_pcdf114_m_apa)[2:13,1])
+colnames(corrtable_pcdf114m_apa) <- "PCDF114_male"
+rownames(corrtable_pcdf114m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf114m_apa)
+
+## model
+design_i_pcdf114_m <- model.matrix(~ 
+                         PCDF114 + 
+                         age_m +
+                         PCDF114 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDF114 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdf114_m <- lmFit(mVal_male, design_i_pcdf114_m)
+
+fit_i_e_pcdf114_m <- eBayes(fit_i_pcdf114_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdf114_m)) # 110 cpg sig for PCDF114, 15 for PCDF114:highEduc
+
+DMPs_pcdf114_m_pcdf114 <- topTable(fit_i_e_pcdf114_m, number = Inf, coef = "PCDF114", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdf114_m_pcdf114), pheno = pheno_ct_male$PCDF114, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDF114")
+CpG_pcdf114_m_pcdf114 <- rownames(DMPs_pcdf114_m_pcdf114)
+keepCpG_pcdf114_m_pcdf114 <- c("cg02887499", "cg05849676", "cg20460234", "cg07911225", "cg12817634", "cg11550825", "cg20280727", "cg11685510", "cg02915720", "cg19925675", "cg11995437", "cg24413819", "cg17651356", "cg17558780", "cg06823112", "cg07636338", "cg13377354", "cg23894287", "cg11996456", "cg23574443", "cg12277532")
+removeCpG_pcdf114_m_pcdf114 <- setdiff(CpG_pcdf114_m_pcdf114, keepCpG_pcdf114_m_pcdf114)
+length(CpG_pcdf114_m_pcdf114) - length(keepCpG_pcdf114_m_pcdf114) == length(removeCpG_pcdf114_m_pcdf114)
+
+DMPs_pcdf114_m_pcdf114higheducmr <- topTable(fit_i_e_pcdf114_m, number = Inf, coef = "PCDF114:highEduc_m_r", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdf114_m_pcdf114higheducmr), pheno = pheno_ct_male$PCDF114*pheno_ct_male$highEduc_m_r, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDF114:highEducmr")
+CpG_pcdf114_m_pcdf114higheducmr <- rownames(DMPs_pcdf114_m_pcdf114higheducmr)
+keepCpG_pcdf114_m_pcdf114higheducmr <- c("cg05164185", "cg23092148", "cg27559462", "cg00534176", "cg09917123")
+removeCpG_pcdf114_m_pcdf114higheducmr <- setdiff(CpG_pcdf114_m_pcdf114higheducmr, keepCpG_pcdf114_m_pcdf114higheducmr)
+length(CpG_pcdf114_m_pcdf114higheducmr) - length(keepCpG_pcdf114_m_pcdf114higheducmr) == length(removeCpG_pcdf114_m_pcdf114higheducmr)
+
+removeCpG_pcdf114_m_all <- union(removeCpG_pcdf114_m_pcdf114, removeCpG_pcdf114_m_pcdf114higheducmr)
+
+mVal_annot_propCpG_pcdf114_m <- as.data.frame(mVal_annot[rownames(mVal_annot) %in% removeCpG_pcdf114_m_all, ]) # outlier cpgs are unsystmetically on all chromosomes 
+
+# remove outlier CpGs
+mVal_male_redCpG_pcdf114 <- mVal_male[!rownames(mVal_male) %in% removeCpG_pcdf114_m_all, ]
+mVal_onlyannot_redCpG_pcdf114_m <- as.data.frame(mVal_onlyannot[!rownames(mVal_onlyannot) %in% removeCpG_pcdf114_m_all, ])
+bVal_male_redCpG_pcdf114 <- bVal_male[!rownames(bVal_male) %in% removeCpG_pcdf114_m_all, ]
+
+## model redCpG
+design_i_redCpG_pcdf114_m <- model.matrix(~ 
+                         PCDF114 + 
+                         age_m +
+                         PCDF114 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDF114 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_redCpG_pcdf114_m <- lmFit(mVal_male_redCpG_pcdf114, design_i_redCpG_pcdf114_m)
+
+fit_i_e_redCpG_pcdf114_m <- eBayes(fit_i_redCpG_pcdf114_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_redCpG_pcdf114_m)) # 0 sig CpG for PCDF114
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDF118 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDF118 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdf188_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf118_f <- data.frame(pheno_ct_female$PCDF118, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdf118_f <- rcorr(as.matrix(cor_data_pcdf118_f))
+cor_matrix_pcdf118_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf118_f[["P"]][,"pheno_ct_female.PCDF118"] # sig age_m
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf118_f_apa <- data.frame(pheno_ct_female$PCDF118, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdf118f_apa <- as.data.frame(corstarsl(cor_data_pcdf118_f_apa)[2:13,1])
+colnames(corrtable_pcdf118f_apa) <- "PCDF118_female"
+rownames(corrtable_pcdf118f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf118f_apa)
+
+## model 
+design_i_pcdf118_f <- model.matrix(~ 
+                         PCDF118 + 
+                         age_m +
+                         PCDF118 * age_m + 
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdf118_f <- lmFit(mVal_female, design_i_pcdf118_f)
+
+fit_i_e_pcdf118_f <- eBayes(fit_i_pcdf118_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdf118_f)) # 0 cpg sig for PCDF118
+
+```
+
+# ##############
+# Predictor: PCDF118 - sex == male == 1
+# ##############
+
+```{r model  pcdf118_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf118_m <- data.frame(pheno_ct_male$PCDF118, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdf118_m <- rcorr(as.matrix(cor_data_pcdf118_m))
+cor_matrix_pcdf118_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf118_m[["P"]][, "pheno_ct_male.PCDF118"] # sig age_m
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf118_m_apa <- data.frame(pheno_ct_male$PCDF118, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdf118m_apa <- as.data.frame(corstarsl(cor_data_pcdf118_m_apa)[2:13,1])
+colnames(corrtable_pcdf118m_apa) <- "PCDF118_male"
+rownames(corrtable_pcdf118m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf118m_apa)
+
+## model
+design_i_pcdf118_m <- model.matrix(~ 
+                         PCDF118 + 
+                         age_m +
+                         PCDF118 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdf118_m <- lmFit(mVal_male, design_i_pcdf118_m)
+
+fit_i_e_pcdf118_m <- eBayes(fit_i_pcdf118_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdf118_m)) # 1 cpg sig for PCDF118
+
+DMPs_pcdf118_m_pcdf118 <- topTable(fit_i_e_pcdf118_m, number = Inf, coef = "PCDF118", p.value = 0.05, genelist = mVal_onlyannot)
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdf118_m_pcdf118), pheno = pheno_ct_male$PCDF118, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "pcdf118")
+keepCpG_pcdf118_m_pcdf118 # non
+
+DMPs_pcdf118_m_agem <- topTable(fit_i_e_pcdf118_m, number = Inf, coef = "age_m", p.value = 0.05, genelist = mVal_onlyannot)
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdf118_m_agem), pheno = pheno_ct_male$age_m, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "agem")
+
+keepCpG_pcdf118_m_agem # non
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDF121 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDF121 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdf121_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf121_f <- data.frame(pheno_ct_female$PCDF121, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdf121_f <- rcorr(as.matrix(cor_data_pcdf121_f))
+cor_matrix_pcdf121_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf121_f[["P"]][,"pheno_ct_female.PCDF121"] # sig age_m, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf121_f_apa <- data.frame(pheno_ct_female$PCDF121, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdf121f_apa <- as.data.frame(corstarsl(cor_data_pcdf121_f_apa)[2:13,1])
+colnames(corrtable_pcdf121f_apa) <- "PCDF121_female"
+rownames(corrtable_pcdf121f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf121f_apa)
+
+## model 
+design_i_pcdf121_f <- model.matrix(~ 
+                         PCDF121 + 
+                         age_m +
+                         PCDF121 * age_m + 
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDF121 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdf121_f <- lmFit(mVal_female, design_i_pcdf121_f)
+
+fit_i_e_pcdf121_f <- eBayes(fit_i_pcdf121_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdf121_f)) # 0 cpg sig for PCDF121
+
+```
+
+# ##############
+# Predictor: PCDF121 - sex == male == 1
+# ##############
+
+```{r model pcdf121_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf121_m <- data.frame(pheno_ct_male$PCDF121, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdf121_m <- rcorr(as.matrix(cor_data_pcdf121_m))
+cor_matrix_pcdf121_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf121_m[["P"]][, "pheno_ct_male.PCDF121"] # sig age_m
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf121_m_apa <- data.frame(pheno_ct_male$PCDF121, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdf121m_apa <- as.data.frame(corstarsl(cor_data_pcdf121_m_apa)[2:13,1])
+colnames(corrtable_pcdf121m_apa) <- "PCDF121_male"
+rownames(corrtable_pcdf121m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf121m_apa)
+
+## model
+design_i_pcdf121_m <- model.matrix(~ 
+                         PCDF121 + 
+                         age_m +
+                         PCDF121 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdf121_m <- lmFit(mVal_male, design_i_pcdf121_m)
+
+fit_i_e_pcdf121_m <- eBayes(fit_i_pcdf121_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdf121_m)) # 13 cpg sig for PCDF121
+
+DMPs_pcdf121_m_pcdf121 <- topTable(fit_i_e_pcdf121_m, number = Inf, coef = "PCDF121", p.value = 0.05, genelist = mVal_onlyannot)
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdf121_m_pcdf121), pheno = pheno_ct_male$PCDF121, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDF121")
+
+keepCpG_pcdf121_m_pcdf121 # non
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDF130 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDF130 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdf130_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf130_f <- data.frame(pheno_ct_female$PCDF130, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdf130_f <- rcorr(as.matrix(cor_data_pcdf130_f))
+cor_matrix_pcdf130_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf130_f[["P"]][,"pheno_ct_female.PCDF130"] # sig smoke_m_r, highEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf130_f_apa <- data.frame(pheno_ct_female$PCDF130, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdf130f_apa <- as.data.frame(corstarsl(cor_data_pcdf130_f_apa)[2:13,1])
+colnames(corrtable_pcdf130f_apa) <- "PCDF130_female"
+rownames(corrtable_pcdf130f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf130f_apa)
+
+## model 
+design_i_pcdf130_f <- model.matrix(~ 
+                         PCDF130 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDF130 * smoke_m_r + 
+                         weight_n +
+                         highEduc_m_r +
+                         PCDF130 * highEduc_m_r + 
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_i_pcdf130_f <- lmFit(mVal_female, design_i_pcdf130_f)
+
+fit_i_e_pcdf130_f <- eBayes(fit_i_pcdf130_f, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdf130_f)) # 0 cpg sig for PCDF130
+
+```
+
+# ##############
+# Predictor: PCDF130 - sex == male == 1
+# ##############
+
+```{r model pcdf130_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf130_m <- data.frame(pheno_ct_male$PCDF130, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdf130_m <- rcorr(as.matrix(cor_data_pcdf130_m))
+cor_matrix_pcdf130_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf130_m[["P"]][, "pheno_ct_male.PCDF130"] # sig age_m, smoke_m_r, hihgEduc_m_r
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf130_m_apa <- data.frame(pheno_ct_male$PCDF130, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdf130m_apa <- as.data.frame(corstarsl(cor_data_pcdf130_m_apa)[2:13,1])
+colnames(corrtable_pcdf130m_apa) <- "PCDF130_male"
+rownames(corrtable_pcdf130m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf130m_apa)
+
+## model
+design_i_pcdf130_m <- model.matrix(~ 
+                         PCDF130 + 
+                         age_m +
+                         PCDF130 * age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         PCDF130 * smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         PCDF130 * highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_i_pcdf130_m <- lmFit(mVal_male, design_i_pcdf130_m)
+
+fit_i_e_pcdf130_m <- eBayes(fit_i_pcdf130_m, robust = TRUE)
+
+summary(decideTests(fit_i_e_pcdf130_m)) # 0 cpg sig for PCDF130
+
+```
+
+##___________________________________##
+
+# ##############
+# Predictor: PCDF131 - sex == female == 0
+# ##############
+
+```{r sex differences in levels of congener?}
+t.test(pheno_ct$PCDF131 ~ pheno_ct$sex_n) # not sig
+```
+
+
+```{r model pcdf131_f}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf131_f <- data.frame(pheno_ct_female$PCDF131, pheno_ct_female$weight_n, pheno_ct_female$age_m, pheno_ct_female$dur_gest, pheno_ct_female$smoke_m_r, pheno_ct_female$highEduc_m_r, pheno_ct_female$BMI_m, pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell)
+cor_matrix_pcdf131_f <- rcorr(as.matrix(cor_data_pcdf131_f))
+cor_matrix_pcdf131_f$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf131_f[["P"]][,"pheno_ct_female.PCDF131"] # non
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf131_f_apa <- data.frame(pheno_ct_female$PCDF131, pheno_ct_female$weight_n, pheno_ct_female$BMI_m, pheno_ct_female$age_m, pheno_ct_female$dur_gest,   pheno_ct_female$CD4T, pheno_ct_female$CD8T, pheno_ct_female$NK, pheno_ct_female$Mono, pheno_ct_female$Gran, pheno_ct_female$Bcell, pheno_ct_female$highEduc_m_r, pheno_ct_female$smoke_m_r)
+corrtable_pcdf131f_apa <- as.data.frame(corstarsl(cor_data_pcdf131_f_apa)[2:13,1])
+colnames(corrtable_pcdf131f_apa) <- "PCDF131_female"
+rownames(corrtable_pcdf131f_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf131f_apa)
+
+## model 
+design_add_pcdf131_f <- model.matrix(~ 
+                         PCDF131 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_female)
+
+fit_add_pcdf131_f <- lmFit(mVal_female, design_add_pcdf131_f)
+
+fit_add_e_pcdf131_f <- eBayes(fit_add_pcdf131_f, robust = TRUE)
+
+summary(decideTests(fit_add_e_pcdf131_f)) # 12 cpg sig for PCDF131
+
+DMPs_pcdf131_f_pcdf131 <- topTable(fit_add_e_pcdf131_f, number = Inf, coef = "PCDF131", p.value = 0.05, genelist = mVal_onlyannot)
+par(mfrow = c(3,3))
+plotCpg(bVal_female, cpg = rownames(DMPs_pcdf131_f_pcdf131), pheno = pheno_ct_female$PCDF131, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDF131")
+
+keepCpG_pcdf131_f_pcdf131 #non
+
+```
+
+# ##############
+# Predictor: PCDF131 - sex == male == 1
+# ##############
+
+```{r model pcdf131_m}
+## chose which covariates are confounded with predictor 
+cor_data_pcdf131_m <- data.frame(pheno_ct_male$PCDF131, pheno_ct_male$weight_n, pheno_ct_male$age_m, pheno_ct_male$dur_gest, pheno_ct_male$smoke_m_r, pheno_ct_male$highEduc_m_r, pheno_ct_male$BMI_m, pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell)
+cor_matrix_pcdf131_m <- rcorr(as.matrix(cor_data_pcdf131_m))
+cor_matrix_pcdf131_m$r>.8 # non -> no multicolinerity!
+cor_matrix_pcdf131_m[["P"]][, "pheno_ct_male.PCDF131"] # non 
+
+### apply function (desinged in PCB77 female) to rcorr-matrix and subset data
+cor_data_pcdf131_m_apa <- data.frame(pheno_ct_male$PCDF131, pheno_ct_male$weight_n, pheno_ct_male$BMI_m, pheno_ct_male$age_m, pheno_ct_male$dur_gest,   pheno_ct_male$CD4T, pheno_ct_male$CD8T, pheno_ct_male$NK, pheno_ct_male$Mono, pheno_ct_male$Gran, pheno_ct_male$Bcell, pheno_ct_male$highEduc_m_r, pheno_ct_male$smoke_m_r)
+corrtable_pcdf131m_apa <- as.data.frame(corstarsl(cor_data_pcdf131_m_apa)[2:13,1])
+colnames(corrtable_pcdf131m_apa) <- "PCDF131_male"
+rownames(corrtable_pcdf131m_apa) <- c("neonate큦 birth weight", "mother큦 BMI before pregnancy", "mother큦 age at birth", "gestational length", "CD4T fraction", "CD8T fraction", "NK fraction", "monocyte fraction", "granulocyte fraction", "Bcell fraction", "mother큦 education level", "mother큦 smoking status during pregnancy")
+apa_corrtable_congeners <- cbind(apa_corrtable_congeners, corrtable_pcdf131m_apa)
+
+#### save apa_corrtable_congeners
+#save(apa_corrtable_congeners, file = "path/apa_corrtable_congeners.RData") 
+#write.csv2(apa_corrtable_congeners, file = "path/apa_corrtable_congeners.csv", row.names = TRUE)
+
+## model
+design_add_pcdf131_m <- model.matrix(~ 
+                         PCDF131 + 
+                         age_m +
+                         dur_gest + 
+                         smoke_m_r +
+                         weight_n +
+                         highEduc_m_r +
+                         BMI_m +
+                         CD4T +  
+                         CD8T +
+                         Mono +
+                         NK +
+                         Gran + 
+                         Bcell +  
+                         AMP_Plate,
+                       data = pheno_ct_male)
+
+fit_add_pcdf131_m <- lmFit(mVal_male, design_add_pcdf131_m)
+
+fit_add_e_pcdf131_m <- eBayes(fit_add_pcdf131_m, robust = TRUE)
+
+summary(decideTests(fit_add_e_pcdf131_m)) # 2 cpg sig for PCDF131
+
+DMPs_pcdf131_m_pcdf131 <- topTable(fit_add_e_pcdf131_m, number = Inf, coef = "PCDF131", p.value = 0.05, genelist = mVal_onlyannot)
+plotCpg(bVal_male, cpg = rownames(DMPs_pcdf131_m_pcdf131), pheno = pheno_ct_male$PCDF131, type = "continuous", measure = "beta", ylab = "Beta values", xlab = "PCDF131")
+
+keepCpG_pcdf131_m_pcdf131 # non
+
+```
+
+##___________________________________##
+
+# ##############
+# plot results of sig DMPs for all sig congeners in  one manhattan plot
+# ##############
+
+```{r plot results}
+# prepare data
+DMPs_pcb126_redCpG_m_inf <- topTable(fit_i_e_redCpG_pcb126_m, number = Inf, coef = "PCB126", genelist = mVal_onlyannot_redCpG_pcb126_m)
+DMPs_pcb169_f_inf <- topTable(fit_i_e_pcb169_f, number = Inf, coef = "PCB169", genelist = mVal_onlyannot)
+DMPs_redCpG_pcdd66_m_inf <- topTable(fit_i_e_redCpG_pcdd66_m, number = Inf, coef = "PCDD66", genelist = mVal_onlyannot_redCpG_pcdd66_m)
+DMPs_redCpG_pcdd67_f_inf <- topTable(fit_i_e_redCpG_pcdd67_f, number = Inf, coef = "PCDD67", genelist = mVal_onlyannot_redCpG_pcdd67_f)
+DMPs_redCpG_pcdd70_m_inf <- topTable(fit_i_e_redCpG_pcdd70_m, number = Inf, coef = "PCDD70", genelist = mVal_onlyannot_redCpG_pcdd70_m)
+DMPs_redCpG_pcdd75_m_inf <- topTable(fit_i_e_redCpG_pcdd75_m, number = Inf, coef = "PCDD75", genelist = mVal_onlyannot_redCpG_pcdd75_m)
+
+DMPs_pcb126_redCpG_m_inf_sub <- subset(DMPs_pcb126_redCpG_m_inf, select = c(chr:pos, P.Value:adj.P.Val, UCSC_RefGene_Name))
+colnames(DMPs_pcb126_redCpG_m_inf_sub) <- paste(colnames(DMPs_pcb126_redCpG_m_inf_sub), "PCB126", sep = "_")
+DMPs_pcb126_redCpG_m_inf_sub$cg <- rownames(DMPs_pcb126_redCpG_m_inf_sub)
+
+DMPs_pcb169_f_inf_sub <- subset(DMPs_pcb169_f_inf, select = c(chr:pos, P.Value:adj.P.Val, UCSC_RefGene_Name))
+colnames(DMPs_pcb169_f_inf_sub) <- paste(colnames(DMPs_pcb169_f_inf_sub), "PCB169", sep = "_")
+DMPs_pcb169_f_inf_sub$cg <- rownames(DMPs_pcb169_f_inf_sub)
+
+DMPs_redCpG_pcdd66_m_inf_sub <- subset(DMPs_redCpG_pcdd66_m_inf, select = P.Value:adj.P.Val)
+colnames(DMPs_redCpG_pcdd66_m_inf_sub) <- paste(colnames(DMPs_redCpG_pcdd66_m_inf_sub), "PCDD66", sep = "_")
+DMPs_redCpG_pcdd66_m_inf_sub$cg <- rownames(DMPs_redCpG_pcdd66_m_inf_sub)
+
+DMPs_redCpG_pcdd67_f_inf_sub <- subset(DMPs_redCpG_pcdd67_f_inf, select = P.Value:adj.P.Val)
+colnames(DMPs_redCpG_pcdd67_f_inf_sub) <- paste(colnames(DMPs_redCpG_pcdd67_f_inf_sub), "PCDD67", sep = "_")
+DMPs_redCpG_pcdd67_f_inf_sub$cg <- rownames(DMPs_redCpG_pcdd67_f_inf_sub)
+
+DMPs_redCpG_pcdd70_m_inf_sub <- subset(DMPs_redCpG_pcdd70_m_inf, select = P.Value:adj.P.Val)
+colnames(DMPs_redCpG_pcdd70_m_inf_sub) <- paste(colnames(DMPs_redCpG_pcdd70_m_inf_sub), "PCDD70", sep = "_")
+DMPs_redCpG_pcdd70_m_inf_sub$cg <- rownames(DMPs_redCpG_pcdd70_m_inf_sub)
+
+DMPs_redCpG_pcdd75_m_inf_sub <- subset(DMPs_redCpG_pcdd75_m_inf, select = P.Value:adj.P.Val)
+colnames(DMPs_redCpG_pcdd75_m_inf_sub) <- paste(colnames(DMPs_redCpG_pcdd75_m_inf_sub), "PCDD75", sep = "_")
+DMPs_redCpG_pcdd75_m_inf_sub$cg <- rownames(DMPs_redCpG_pcdd75_m_inf_sub)
+
+DMPs_allsig <- merge(DMPs_pcb126_redCpG_m_inf_sub, DMPs_pcb169_f_inf_sub, by = "cg", all = TRUE)
+DMPs_allsig <- merge(DMPs_allsig, DMPs_redCpG_pcdd66_m_inf_sub, by = "cg", all = TRUE)
+DMPs_allsig <- merge(DMPs_allsig, DMPs_redCpG_pcdd67_f_inf_sub, by = "cg", all = TRUE)
+DMPs_allsig <- merge(DMPs_allsig, DMPs_redCpG_pcdd70_m_inf_sub, by = "cg", all = TRUE)
+DMPs_allsig <- merge(DMPs_allsig, DMPs_redCpG_pcdd75_m_inf_sub, by = "cg", all = TRUE)
+
+DMPs_allsig$chr <- NA
+DMPs_allsig$chr[is.na(DMPs_allsig$chr)] <- DMPs_allsig$chr_PCB126[is.na(DMPs_allsig$chr)]
+DMPs_allsig$chr[is.na(DMPs_allsig$chr)] <- DMPs_allsig$chr_PCB169[is.na(DMPs_allsig$chr)]
+which(is.na(DMPs_allsig$chr) == TRUE)
+DMPs_allsig$pos <- NA
+DMPs_allsig$pos[is.na(DMPs_allsig$pos)] <- DMPs_allsig$pos_PCB126[is.na(DMPs_allsig$pos)]
+DMPs_allsig$pos[is.na(DMPs_allsig$pos)] <- DMPs_allsig$pos_PCB169[is.na(DMPs_allsig$pos)]
+which(is.na(DMPs_allsig$pos) == TRUE)
+colnames(DMPs_allsig)[6] <- "gene"
+DMPs_allsig$UCSC_RefGene_Name_PCB169 <- NULL
+
+DMPs_allsig$pos_PCB126 <- NULL
+DMPs_allsig$pos_PCB169 <- NULL
+DMPs_allsig$chr_PCB126 <- NULL
+DMPs_allsig$chr_PCB169 <- NULL
+
+DMPs_allsig_chr <- gsub(".*chr","", DMPs_allsig$chr)
+which(is.na(DMPs_allsig_chr) == TRUE)
+#which(DMPs_allsig_chr == 'Y')
+DMPs_allsig_chr <- car::recode(DMPs_allsig_chr, "'X' = 23; 'Y' = 24; ")
+DMPs_allsig$chr <- as.numeric(DMPs_allsig$chr)
+#which(is.na(DMPs_allsig_chr) == TRUE)
+DMPs_allsig$chr <- DMPs_allsig_chr
+which(is.na(DMPs_allsig$chr) == TRUE)
+
+#save(DMPs_allsig, file = "path/DMPs_allsig.RData") 
+#write.csv2(DMPs_allsig, file = "path/DMPs_allsig.csv", row.names = TRUE)
+
+#load("path/DMPs_allsig.RData")
+
+# prepare data
+DMPs_allsig$P.Value_PCB126 <- NULL
+DMPs_allsig$P.Value_PCB169 <- NULL
+DMPs_allsig$P.Value_PCDD66 <- NULL
+DMPs_allsig$P.Value_PCDD67 <- NULL
+DMPs_allsig$P.Value_PCDD70 <- NULL
+DMPs_allsig$P.Value_PCDD75 <- NULL
+
+colnames(DMPs_allsig)[2] <- "PCB126_male"
+colnames(DMPs_allsig)[4] <- "PCB169_female"
+colnames(DMPs_allsig)[5] <- "PCDD66_male"
+colnames(DMPs_allsig)[6] <- "PCDD67_female"
+colnames(DMPs_allsig)[7] <- "PCDD70_male"
+colnames(DMPs_allsig)[8] <- "PCDD75_male"
+
+# create long format of data
+DMPs_allsig_tidy <- pivot_longer(DMPs_allsig, cols = c(PCB126_male, PCB169_female, PCDD66_male, PCDD67_female, PCDD70_male, PCDD75_male), names_to = "congener", values_to = "adj.Pvalue")
+which(is.na(DMPs_allsig_tidy$adj.Pvalue) == TRUE)
+DMPs_allsig_tidy_noNA <- DMPs_allsig_tidy[!is.na(DMPs_allsig_tidy$adj.Pvalue), ]
+which(is.na(DMPs_allsig_tidy_noNA) == TRUE)
+DMPs_allsig_tidy_noNA$congener[DMPs_allsig_tidy_noNA$adj.Pvalue > 0.05] <- "not.sig"
+DMPs_allsig_tidy_noNA$log.adj.p <- -log10(DMPs_allsig_tidy_noNA$adj.Pvalue)
+
+# manhattan plot
+# add cummulative chromosome position to data
+DMPs_allsig_tidy_noNA <- DMPs_allsig_tidy_noNA[order(as.numeric(DMPs_allsig_tidy_noNA$chr)),]
+nCHR <- length(unique(as.character(DMPs_allsig_tidy_noNA$chr)))
+DMPs_allsig_tidy_noNA$poscum <- 0
+s <- 0
+nbp <- c()
+for (i in unique(DMPs_allsig_tidy_noNA$chr)){
+  nbp[i] <- max(DMPs_allsig_tidy_noNA[DMPs_allsig_tidy_noNA$chr == i,]$pos)
+  DMPs_allsig_tidy_noNA[DMPs_allsig_tidy_noNA$chr == i,"poscum"] <- DMPs_allsig_tidy_noNA[DMPs_allsig_tidy_noNA$chr == i,"pos"] + s
+  s <- s + nbp[i]
+}
+
+DMPs_allsig_tidy_noNAcent <- DMPs_allsig_tidy_noNA %>% 
+  group_by(chr) %>% 
+  summarize(center = (max(poscum) + min(poscum)) / 2)
+ylim <- abs(floor(log10(min(DMPs_allsig_tidy_noNA$adj.Pvalue))))
+sig <- -log10(0.05)
+chr_labels <- c(as.character(1:22), "X", "Y")
+
+manhattanplot <- ggplot(DMPs_allsig_tidy_noNA, aes(x = poscum, y = -log10(adj.Pvalue), 
+                                color = as.factor(chr), size = -log10(adj.Pvalue))) +
+                        geom_point(alpha = 0.75) + # alpha to make points transparent
+                        geom_text(aes(label=ifelse((-log10(adj.Pvalue))>sig, as.character(congener),'')),hjust=-0.1,vjust=0) +
+                        geom_hline(yintercept = sig, color = "grey40", linetype = "dashed") + 
+                        scale_x_continuous(label = DMPs_allsig_tidy_noNAcent$chr, breaks = DMPs_allsig_tidy_noNAcent$center) +
+                        scale_y_continuous(expand = c(0,0), limits = c(0, ylim)) +
+                        scale_color_manual(values = rep(c("#276FBF", "#183059"), nCHR)) +
+                        #scale_size_continuous(range = c(0.5,3)) +
+                        labs(x = chr_labels, y = "-log10(adj.p)") +
+                        theme_minimal() +
+                        theme( 
+                        legend.position = "none",
+                        panel.border = element_blank(),
+                        panel.grid.major.x = element_blank(),
+                        panel.grid.minor.x = element_blank(),
+                        axis.text.x = element_text(angle = 90, size = 8, vjust = 0.5))
+plot(manhattanplot)
+
+```
+
+# plot euler diagram for overlapping sig cpgs
+
+```{r euler diagram}
+
+# prepare data
+DMPs_f_pcb169 <- rownames(DMPs_pcb169_f)
+DMPs_f_pcdd67 <- rownames(DMPs_redCpG_pcdd67_f)
+DMPs_m_pcb126 <- rownames(DMPs_pcb126_redCpG_m)
+DMPs_m_pcdd66 <- rownames(DMPs_redCpG_pcdd66_m)
+DMPs_m_pcdd70 <- rownames(DMPs_redCpG_pcdd70_m)
+DMPs_m_pcdd75 <- rownames(DMPs_redCpG_pcdd75_m)
+
+DMPs_all <- sort(unique(c(DMPs_f_pcb169, DMPs_f_pcdd67, DMPs_m_pcb126, DMPs_m_pcdd66, DMPs_m_pcdd70, DMPs_m_pcdd75)))
+
+## Generate a matrix, with the sets in columns and possible letters on rows
+Counts <- matrix(0, nrow=length(DMPs_all), ncol=6)
+## Populate the said matrix
+for (i in 1:length(DMPs_all)) {
+   Counts[i,1] <- DMPs_all[i] %in% DMPs_f_pcb169
+   Counts[i,2] <- DMPs_all[i] %in% DMPs_f_pcdd67
+   Counts[i,3] <- DMPs_all[i] %in% DMPs_m_pcb126
+   Counts[i,4] <- DMPs_all[i] %in% DMPs_m_pcdd66
+   Counts[i,5] <- DMPs_all[i] %in% DMPs_m_pcdd70
+   Counts[i,6] <- DMPs_all[i] %in% DMPs_m_pcdd75
+}
+
+cols<-c("darkslategray1", "darkturquoise", "lightskyblue", "lightsteelblue","aliceblue", "lightblue")
+
+# euler diagram
+fit <- eulerr::euler(Counts)
+plot(fit, type = "counts", labels = NULL, quantities = TRUE, fills = cols, col = NULL, legend = list(labels = c("PCB169_female", "PCDD67_female", "PCB126_male", "PCDD66_male", "PCDD70_male", "PCDD75_male")))
+
+```
+
+# sessionInfo
+
+```{r sessionInfo}
+
+sessionInfo()
+
+```
+
