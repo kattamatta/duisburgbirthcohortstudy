@@ -1,0 +1,80 @@
+---
+title: "preprocess_allpheno_data"
+author: "Katharina Mattonet"
+date: "10 März 2021"
+output: html_document
+---
+
+# load libraries
+
+```{r libraries}
+library(dplyr)
+library(readxl)
+
+```
+
+# load data
+
+```{r load data}
+
+Kollektiv <- read_excel("path/Kollektiv_DU_BO_Kodierung.xlsx") # coding: Kollektiv: 1 = Duisburg (2000), 2 = Bochum (2009); Sex_Kind: 1 = boy, 2 = girl
+EPICLaufnr_VpNr_Kodierung <- read.csv("path/EPICLaufnr_VpNr_Kodierung.csv", sep=";")
+Alter_M_K <- read.delim2("path/Alter_M_K.txt")
+Blut_Dioxin_PCB <- read.delim2("path/Blut_Dioxin_PCB.txt")
+dbo_BerAusw_Gew_Gro_BMI <- read.delim2("path/dbo_BerAusw_Gew_Gro_BMI.txt")
+dbo_U1_fb2 <- read.delim2("path/dbo_U1_fb2.txt", comment.char="#")
+
+```
+
+# combine data
+
+```{r combine data}
+
+Kollektiv$Kodierung <- NULL
+Kol_Du <- Kollektiv[Kollektiv$Kollektiv == 1, ]
+colnames(Kol_Du)[1] <- "B_StdNr"
+
+df_age <- data.frame(Alter_M_K$StdNr, Alter_M_K$AlterM_zur_Geburt)
+colnames(df_age) <- c("B_StdNr", "age_m") # B_StdNr = ID of samples in pheno data
+
+df_edc <- data.frame(Blut_Dioxin_PCB$B_StdNr, Blut_Dioxin_PCB$B_P0771L, Blut_Dioxin_PCB$B_P0811L, Blut_Dioxin_PCB$B_P1261L, Blut_Dioxin_PCB$B_P1691L, Blut_Dioxin_PCB$B_P1051L, Blut_Dioxin_PCB$B_P1141L, Blut_Dioxin_PCB$B_P1181L, Blut_Dioxin_PCB$B_P1231L, Blut_Dioxin_PCB$B_P1561L, Blut_Dioxin_PCB$B_P1571L, Blut_Dioxin_PCB$B_P1671L, Blut_Dioxin_PCB$B_P1891L, Blut_Dioxin_PCB$B_P0281L, Blut_Dioxin_PCB$B_P0521L, Blut_Dioxin_PCB$B_P1011L, Blut_Dioxin_PCB$B_P1381L, Blut_Dioxin_PCB$B_P1531L, Blut_Dioxin_PCB$B_P1801L, Blut_Dioxin_PCB$B_D41_1L, Blut_Dioxin_PCB$B_D51_1L, Blut_Dioxin_PCB$B_D61_1L, Blut_Dioxin_PCB$B_D62_1L, Blut_Dioxin_PCB$B_D63_1L, Blut_Dioxin_PCB$B_D71_1L, Blut_Dioxin_PCB$B_D81_1L, Blut_Dioxin_PCB$B_F41_1L, Blut_Dioxin_PCB$B_F51_1L, Blut_Dioxin_PCB$B_F52_1L, Blut_Dioxin_PCB$B_F61_1L, Blut_Dioxin_PCB$B_F62_1L, Blut_Dioxin_PCB$B_F63_1L, Blut_Dioxin_PCB$B_F64_1L, Blut_Dioxin_PCB$B_F71_1L, Blut_Dioxin_PCB$B_F72_1L , Blut_Dioxin_PCB$B_F81_1L, Blut_Dioxin_PCB$B_P0771M, Blut_Dioxin_PCB$B_P0811M, Blut_Dioxin_PCB$B_P1261M, Blut_Dioxin_PCB$B_P1691M, Blut_Dioxin_PCB$B_P1051M, Blut_Dioxin_PCB$B_P1141M, Blut_Dioxin_PCB$B_P1181M, Blut_Dioxin_PCB$B_P1231M, Blut_Dioxin_PCB$B_P1561M, Blut_Dioxin_PCB$B_P1571M, Blut_Dioxin_PCB$B_P1671M, Blut_Dioxin_PCB$B_P1891M, Blut_Dioxin_PCB$B_P0281M, Blut_Dioxin_PCB$B_P0521M, Blut_Dioxin_PCB$B_P1011M, Blut_Dioxin_PCB$B_P1381M, Blut_Dioxin_PCB$B_P1531M, Blut_Dioxin_PCB$B_P1801M, Blut_Dioxin_PCB$B_D41_1M, Blut_Dioxin_PCB$B_D51_1M, Blut_Dioxin_PCB$B_D61_1M, Blut_Dioxin_PCB$B_D62_1M, Blut_Dioxin_PCB$B_D63_1M, Blut_Dioxin_PCB$B_D71_1M, Blut_Dioxin_PCB$B_D81_1M, Blut_Dioxin_PCB$B_F41_1M, Blut_Dioxin_PCB$B_F51_1M, Blut_Dioxin_PCB$B_F52_1M, Blut_Dioxin_PCB$B_F61_1M, Blut_Dioxin_PCB$B_F62_1M, Blut_Dioxin_PCB$B_F63_1M, Blut_Dioxin_PCB$B_F64_1M, Blut_Dioxin_PCB$B_F71_1M, Blut_Dioxin_PCB$B_F72_1M ,Blut_Dioxin_PCB$B_F81_1M) 
+colnames(df_edc) <- c("B_StdNr", "PCB77", "PCB81", "PCB126", "PCB169", "PCB105", "PCB114", "PCB118", "PCB123", "PCB156", "PCB157", "PCB167", "PCB189",  "PCB28", "PCB52", "PCB101", "PCB138", "PCB153", "PCB180", "PCDD48", "PCDD54", "PCDD66", "PCDD67", "PCDD70", "PCDD73", "PCDD75", "PCDF83", "PCDF94", "PCDF114", "PCDF118", "PCDF121", "PCDF130", "PCDF124","PCDF131", "PCDF134", "PCDF135", "nonlog_PCB77", "nonlog_PCB81", "nonlog_PCB126", "nonlog_PCB169", "nonlog_PCB105", "nonlog_PCB114", "nonlog_PCB118", "nonlog_PCB123", "nonlog_PCB156", "nonlog_PCB157", "nonlog_PCB167", "nonlog_PCB189",  "nonlog_PCB28", "nonlog_PCB52", "nonlog_PCB101", "nonlog_PCB138", "nonlog_PCB153", "nonlog_PCB180", "nonlog_PCDD48", "nonlog_PCDD54", "nonlog_PCDD66", "nonlog_PCDD67", "nonlog_PCDD70", "nonlog_PCDD73", "nonlog_PCDD75", "nonlog_PCDF83", "nonlog_PCDF94", "nonlog_PCDF114", "nonlog_PCDF118", "nonlog_PCDF121", "nonlog_PCDF130", "nonlog_PCDF124","nonlog_PCDF131", "nonlog_PCDF134", "nonlog_PCDF135")
+df_edc_age <- left_join(df_edc, df_age)
+
+df_weightn <- data.frame(dbo_BerAusw_Gew_Gro_BMI$StdNr, dbo_BerAusw_Gew_Gro_BMI$U1_GebGew_k)
+colnames(df_weightn) <- c("B_StdNr", "weight_n")
+
+df_edc_age_weightn <- left_join(df_edc_age, df_weightn)
+
+df_smoke_bmi_alc_gest <- data.frame(dbo_U1_fb2$StdNr, dbo_U1_fb2$X7_2_RWaehr, dbo_U1_fb2$X2_2_GewVor, dbo_U1_fb2$X1_3_Gro, dbo_U1_fb2$X2_1_SchwDauer, dbo_U1_fb2$X5_1_SchulAb_Mutter)
+colnames(df_smoke_bmi_alc_gest) <- c("B_StdNr", "smoke_m", "weight_m", "height_m", "dur_gest", "highEduc_m")
+
+df_edc_age_weightn_smoke_bmi_alc_gest <- left_join(df_edc_age_weightn, df_smoke_bmi_alc_gest)
+
+all_data <- left_join(Kol_Du, df_edc_age_weightn_smoke_bmi_alc_gest)
+
+all_data$smoke_m_r <- car::recode(all_data$smoke_m, "c(1,2,3,4) = '1'; ", as.factor = TRUE) # 0 = non-smoking, 1 = smoking during pregnancy
+all_data$BMI_m <- all_data$weight_m / ((all_data$height_m/100)^2) 
+all_data$sex_n <- car::recode(all_data$Sex_Kind, "2 = '0'; ", as.factor = TRUE) # 0 = female, 1 = male
+all_data$highEduc_m_r <- car::recode(all_data$highEduc_m, "6 = 1; ") # 6 = unknown
+
+all_data$dur_gest <- as.numeric(all_data$dur_gest)
+all_data$weight_m <- as.numeric(all_data$weight_m)
+all_data$height_m <- as.numeric(all_data$height_m)
+all_data$weight_n <- as.numeric(all_data$weight_n)
+
+colnames(EPICLaufnr_VpNr_Kodierung) <- c("D_StdNr", "B_StdNr")
+
+all_data <- left_join(EPICLaufnr_VpNr_Kodierung, all_data, by = "B_StdNr")
+all_data[, c("Kollektiv", "smoke_m", "weight_m", "height_m", "highEduc_m")] <- NULL
+
+```
+
+# save
+
+```{r save}
+
+#save(all_data, file = "path/pheno_data_N164.RData")
+
+```
+

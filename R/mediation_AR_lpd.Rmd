@@ -1,0 +1,947 @@
+---
+title: "mediation_ARbisulseq_final_pretty"
+author: "Katharina Mattonet"
+date: "9 März 2021"
+output: html_document
+---
+
+# load libraries
+
+```{r load libraries}
+library(dplyr)
+library(lavaan)
+library(Hmisc)
+library(semPlot)
+library(semTools)
+```
+
+# load data
+
+```{r load data}
+
+
+#load("path/mediation_ARbisulfitseq_image_fullmoderation_grouped2.RData") 
+
+load(file = "path/pheno_data_N164.RData")
+all_data_new <- all_data
+remove(all_data)
+
+load(file = "path/predictedPDS.RData")
+
+load(file = "path/preprocessed_AR.RData")
+
+load(file = "path/BMI_kids.RData")
+
+
+```
+
+# prepare data
+
+```{r prepare data}
+
+all_data_new <- left_join(all_data_new, BMI, by = "B_StdNr")
+BMI_red <- subset(all_data_new, select = c(D_StdNr, diffu11u6))
+colnames(BMI_red)[2] <- "BMI_kids_diffu15u6" 
+
+
+slopePDS <- data.frame(as.integer(all_data_wide$D_StdNr), all_data_wide$slopePDS, all_data_wide$PDS_diffU15U6)
+colnames(slopePDS) <- c("D_StdNr", "slopePDS", "slopeDiffU15U6")
+all_data_new <- left_join(all_data_new, slopePDS, by = "D_StdNr")
+all_data_new <- left_join(all_data_new, BMI_red, by = "D_StdNr")
+
+all_data_new <- all_data_new[ !(all_data_new$D_StdNr %in% c(45, 68, 77, 80, 127, 160, 162)), ] # remove 45: same serum sample number as 44 (B_Std_Nr: 72), 68 (other ethnicity): not matching a priori criteria, 77, 80, 127 & 160: no EDCs data, 162 (all ready excluded before data import): no sex of neonate, age of mother, duration gestation data
+
+
+edc_lod_N157 <- data.frame(all_data_new$nonlog_PCB77, all_data_new$nonlog_PCB81, all_data_new$nonlog_PCB126, all_data_new$nonlog_PCB169, all_data_new$nonlog_PCB105, all_data_new$nonlog_PCB114, all_data_new$nonlog_PCB118, all_data_new$nonlog_PCB123, all_data_new$nonlog_PCB156, all_data_new$nonlog_PCB157, all_data_new$nonlog_PCB167, all_data_new$nonlog_PCB189, all_data_new$nonlog_PCB28, all_data_new$nonlog_PCB52, all_data_new$nonlog_PCB101, all_data_new$nonlog_PCB138, all_data_new$nonlog_PCB153, all_data_new$nonlog_PCB180, all_data_new$nonlog_PCDD48, all_data_new$nonlog_PCDD54, all_data_new$nonlog_PCDD66, all_data_new$nonlog_PCDD67, all_data_new$nonlog_PCDD70, all_data_new$nonlog_PCDD73, all_data_new$nonlog_PCDD75, all_data_new$nonlog_PCDF83, all_data_new$nonlog_PCDF94, all_data_new$nonlog_PCDF114, all_data_new$nonlog_PCDF118, all_data_new$nonlog_PCDF121, all_data_new$nonlog_PCDF130, all_data_new$nonlog_PCDF124, all_data_new$nonlog_PCDF131, all_data_new$nonlog_PCDF134, all_data_new$nonlog_PCDF135)
+
+## which congeners has measure <= .5 >= 25%
+for(i in 1:ncol(edc_lod_N157)) {
+  if((length(which((round(edc_lod_N157[,i], digit = 1) <= 0.5) == TRUE))/157) > .25)
+  print(colnames(edc_lod_N157)[i])
+}
+
+remove_congeners <- as.vector(c("PCB105", "PCB114", "PCB118", "PCB123", "PCB156", "PCB157", "PCB167", "PCB189", "PCB28", "PCB52", "PCB101", "PCB138", "PCB153", "PCB180", "PCDF83", "PCDF94", "PCDF124", "PCDF134","PCDF135"))
+
+all_data_new <- as.data.frame(all_data_new[!(colnames(all_data_new) %in% remove_congeners)])
+
+all_data_new$sex_n <- as.numeric(levels(all_data_new$sex_n))[all_data_new$sex_n]
+all_data_new$smoke_m_r <- as.numeric(levels(all_data_new$smoke_m_r))[all_data_new$smoke_m_r]
+
+all_data_new <- left_join(all_data_new, AR, by = "D_StdNr")
+
+```
+
+
+# explore data
+
+```{r explore data}
+
+cor_table_cpgs <- all_data_new[, c("CpG-67_b", "CpG-62_b", "CpG-53_b", "CpG-46_b", "CpG-41_b")]
+descriptive_CpG_betas <- psych::describe(cor_table_cpgs)
+descriptive_CpG_meanb <- psych::describe(all_data_new$Mean_b)
+descriptive_CpGs_AR <- rbind(descriptive_CpG_betas, descriptive_CpG_meanb)
+rownames(descriptive_CpGs_AR)[6] <- "meanCpGs"
+#write.csv2(descriptive_CpGs_AR, file = "path/descriptive_CpGs_AR.csv")
+
+## crate APA-table of correlation matrix
+### function
+corstarsl <- function(x){
+require(Hmisc)
+x <- as.matrix(x)
+R <- rcorr(x)$r
+p <- rcorr(x)$P
+p <- round(p, digits = 2)
+
+## define notions for significance levels; spacing is important.
+mystars <- ifelse(p < .01, "**", ifelse(p < .05, "*", " "))
+
+## trunctuate the matrix that holds the correlations to two decimal
+R <- format(round(cbind(rep(-1.11, ncol(x)), R), 2))[,-1]
+
+## build a new matrix that includes the correlations with their apropriate stars
+Rnew <- matrix(paste(R, mystars, sep=""), ncol=ncol(x))
+diag(Rnew) <- paste(diag(R), " ", sep="")
+rownames(Rnew) <- colnames(x)
+colnames(Rnew) <- paste(colnames(x), "", sep="")
+
+## remove upper triangle
+Rnew <- as.matrix(Rnew)
+Rnew[upper.tri(Rnew, diag = TRUE)] <- ""
+Rnew <- as.data.frame(Rnew)
+
+## remove last column and return the matrix (which is now a data frame)
+Rnew <- cbind(Rnew[1:length(Rnew)-1])
+return(Rnew)
+}
+
+cor<- Hmisc::rcorr(as.matrix(cor_table_cpgs))
+cor$P # all r sig -> mean beta okay!
+corrtable_AR_apa <- as.data.frame(corstarsl(cor_table_cpgs))
+#write.csv2(corrtable_AR_apa, file = "path/corrtable_AR_apa.csv")
+
+
+corrmatrixY <- as.matrix(subset(all_data_new, select = c(slopeDiffU15U6, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, BMI_kids_diffu15u6)))
+rcorr(corrmatrixY)$P[, 1] # p < .05 (rounded) including in following mediation model ## smoke_m_r 
+
+corrmatrixM <- as.matrix(subset(all_data_new, select = c(Mean_M, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m)))
+rcorr(corrmatrixM)$P[, 1] # p < .05 (rounded) including in following mediation model ## non 
+t.test(all_data_new$Mean_M ~ all_data_new$sex_n) #ns
+aggregate(Mean_b ~ sex_n, data = all_data_new, FUN = mean) 
+aggregate(Mean_b ~ sex_n, data = all_data_new, FUN = sd) 
+
+
+# Y = slopePDS
+corrmatrixYslope <- as.matrix(subset(all_data_new, select = c(slopePDS, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, BMI_kids_diffu15u6)))
+rcorr(corrmatrixYslope)$P[, 1] # p < .05 (rounded) including in following mediation model ## non
+
+corrtableXY <- as.data.frame(corstarsl(corrmatrixY)[2:9,1])
+colnames(corrtableXY) <- "PDS score (t5-t0)\n(N=157)"
+rownames(corrtableXY) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "child´s BMI (t5-t0)")
+corrtableXY
+
+corrtableXY_slope <- as.data.frame(corstarsl(corrmatrixYslope)[2:9,1])
+colnames(corrtableXY_slope) <- "PDS slope\n(N=157)"
+rownames(corrtableXY_slope) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "child´s BMI (t5-t0)")
+corrtableXY_slope
+
+corrtable_diff_slope_PDS <- cbind(corrtableXY, corrtableXY_slope)
+
+#write.csv2(corrtable_diff_slope_PDS, file = "path/mediation_EWAS_corrtable_covvardiff_slope_PDS_N157_AR.csv")
+
+corrtableXM <- as.data.frame(corstarsl(corrmatrixM)[2:8,1])
+colnames(corrtableXM) <- "AR (N=157)"
+rownames(corrtableXM) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy")
+corrtableXM
+
+#write.csv2(corrtable, file = "path/mediation_ARbisulfiteseq_corrtable_covvar_AR_N157.csv")
+
+```
+
+# set seed for replication
+
+```{r seed}
+
+set.seed(123)
+
+```
+
+# check data for normal distribution
+
+```{r check out}
+var(all_data_new$slopePDS, na.rm = TRUE) # 0.002248299, use slopeDiffU15U6 as outcome in main models
+length(which(is.na(all_data_new$slopeDiffU15U6))) 
+length(which(is.na(all_data_new$slopePDS))) 
+length(which(is.na(all_data_new$Mean_M))) 
+length(which(is.na(all_data_new$sex_n))) 
+
+skew(all_data_new$slopePDS)
+kurtosis(all_data_new$slopePDS)
+skew(all_data_new$slopeDiffU15U6)
+kurtosis(all_data_new$slopeDiffU15U6)
+skew(all_data_new$Mean_M)
+kurtosis(all_data_new$Mean_M)
+# not normal distributed data -> use robust test of satorra.bentler 
+```
+
+
+# PCB77 - mediation model grouped by sex
+
+```{r medmodel pcb77}
+
+all_data_new$PCB77c <- scale(all_data_new$PCB77, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCB77c)
+kurtosis(all_data_new$PCB77c)
+# not normal distributed data -
+
+#model_pcb77 <- '
+          #slopeDiffU15U6 ~ c*PCB77c + sex_n + cw*PCB77c:sex_n + b*Mean_M + bw*Mean_M:sex_n
+          #Mean_M ~ a*PCB77c + sex_n + aw*PCB77c:sex_n
+		      #indirect0 := a*b # + 0*aw*b + 0*a*bw + 0*aw*bw -> sex_n == 0
+		      #total0 := c + indirect0 # + 0*cw
+          #indirect1 := indirect0 + 1*aw*b + 1*a*bw + 1*aw*bw # -> sex_n == 1
+          #total1 := c + indirect1 + 1*cw
+          #diffind := indirect0 - indirect1
+          #difftotal := total0 - total1' 
+
+model_pcb77 <- '
+          slopeDiffU15U6 ~ c(c0,c1)*PCB77c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCB77c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcb77.fit.YB <- sem(model_pcb77, data = all_data_new, se = "bootstrap", test = "yuan.bentler", bootstrap = 10000, missing = "fiml.x", group = "sex_n")
+summary(model_pcb77.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcb77.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcb77_slope <- '
+          slopePDS ~ c(c0,c1)*PCB77c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCB77c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'
+model_pcb77_slope.fit.YB <- sem(model_pcb77_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcb77_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCB81 - mediation model grouped by sex
+
+```{r medmodel pcb81}
+
+all_data_new$PCB81c <- scale(all_data_new$PCB81, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCB81c)
+kurtosis(all_data_new$PCB81c)
+
+model_pcb81 <- '
+          slopeDiffU15U6 ~ c(c0,c1)*PCB81c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCB81c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcb81.fit.YB <- sem(model_pcb81, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcb81.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcb81.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcb81_slope <- '
+          slopePDS ~ c(c0,c1)*PCB81c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCB81c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'
+model_pcb81_slope.fit.YB <- sem(model_pcb81_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcb81_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCB126 - mediation model grouped by sex
+
+```{r medmodel pcb126}
+
+all_data_new$PCB126c <- scale(all_data_new$PCB126, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCB126c)
+kurtosis(all_data_new$PCB126c)
+
+model_pcb126 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCB126c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCB126c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'
+model_pcb126.fit.YB <- sem(model_pcb126, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcb126.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcb126.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcb126_slope <- '
+           slopePDS ~  c(c0,c1)*PCB126c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCB126c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'
+model_pcb126_slope.fit.YB <- sem(model_pcb126_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcb126_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCB169 - mediation model grouped by sex
+
+```{r medmodel pcb169}
+
+all_data_new$PCB169c <- scale(all_data_new$PCB169, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCB169c)
+kurtosis(all_data_new$PCB169c)
+
+model_pcb169 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCB169c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCB169c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'
+model_pcb169.fit.YB <- sem(model_pcb169, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcb169.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcb169.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcb169_slope <- '
+          slopePDS ~ c(c0,c1)*PCB169c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCB169c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcb169_slope.fit.YB <- sem(model_pcb169_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcb169_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCDD48 - mediation model grouped by sex
+
+```{r medmodel pcdd48}
+
+all_data_new$PCDD48c <- scale(all_data_new$PCDD48, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDD48c)
+kurtosis(all_data_new$PCDD48c)
+
+model_pcdd48 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCDD48c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD48c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd48.fit.YB <- sem(model_pcdd48, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdd48.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdd48.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdd48_slope <- '
+           slopePDS ~ c(c0,c1)*PCDD48c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD48c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd48_slope.fit.YB <- sem(model_pcdd48_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdd48_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+```
+
+# PCDD54 - mediation model grouped by sex
+
+```{r medmodel pcdd54}
+
+all_data_new$PCDD54c <- scale(all_data_new$PCDD54, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDD54c)
+kurtosis(all_data_new$PCDD54c)
+
+model_pcdd54 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCDD54c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD54c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd54.fit.YB <- sem(model_pcdd54, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdd54.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdd54.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdd54_slope <- '
+          slopePDS ~ c(c0,c1)*PCDD54c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD54c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd54_slope.fit.YB <- sem(model_pcdd54_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdd54_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCDD66 - mediation model grouped by sex
+
+```{r medmodel pcdd66}
+
+all_data_new$PCDD66c <- scale(all_data_new$PCDD66, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDD66c)
+kurtosis(all_data_new$PCDD66c)
+
+model_pcdd66 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCDD66c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD66c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd66.fit.YB <- sem(model_pcdd66, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdd66.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdd66.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdd66_slope <- '
+           slopePDS ~ c(c0,c1)*PCDD66c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD66c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd66_slope.fit.YB <- sem(model_pcdd66_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdd66_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCDD67 - mediation model grouped by sex
+
+```{r medmodel pcdd67}
+
+all_data_new$PCDD67c <- scale(all_data_new$PCDD67, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDD67c)
+kurtosis(all_data_new$PCDD67c)
+
+model_pcdd67 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCDD67c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD67c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'  
+model_pcdd67.fit.YB <- sem(model_pcdd67, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdd67.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdd67.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdd67_slope <- '
+           slopePDS ~ c(c0,c1)*PCDD67c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD67c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd67_slope.fit.YB <- sem(model_pcdd67_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdd67_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+
+# PCDD70 - mediation model grouped by sex
+
+```{r medmodel pcdd70}
+
+all_data_new$PCDD70c <- scale(all_data_new$PCDD70, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDD70c)
+kurtosis(all_data_new$PCDD70c)
+
+model_pcdd70 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCDD70c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD70c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd70.fit.YB <- sem(model_pcdd70, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdd70.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdd70.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdd70_slope <- '
+           slopePDS ~ c(c0,c1)*PCDD70c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD70c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd70_slope.fit.YB <- sem(model_pcdd70_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdd70_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+```
+
+# PCDD73 - mediation model grouped by sex
+
+```{r medmodel pcdd73}
+
+all_data_new$PCDD73c <- scale(all_data_new$PCDD73, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDD73c)
+kurtosis(all_data_new$PCDD73c)
+
+model_pcdd73 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCDD73c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD73c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd73.fit.YB <- sem(model_pcdd73, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdd73.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdd73.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdd73_slope <- '
+           slopePDS ~ c(c0,c1)*PCDD73c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD73c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd73_slope.fit.YB <- sem(model_pcdd73_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdd73_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCDD75 - mediation model grouped by sex
+
+```{r medmodel pcdd75}
+
+all_data_new$PCDD75c <- scale(all_data_new$PCDD75, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDD75c)
+kurtosis(all_data_new$PCDD75c)
+
+model_pcdd75 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCDD75c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD75c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd75.fit.YB <- sem(model_pcdd75, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdd75.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdd75.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdd75_slope <- '
+          slopePDS ~ c(c0,c1)*PCDD75c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDD75c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdd75_slope.fit.YB <- sem(model_pcdd75_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdd75_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCDF114 - mediation model grouped by sex
+
+```{r medmodel pcdf114}
+
+all_data_new$PCDF114c <- scale(all_data_new$PCDF114, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDF114c)
+kurtosis(all_data_new$PCDF114c)
+
+model_pcdf114 <- '
+           slopeDiffU15U6 ~ c(c0,c1)*PCDF114c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF114c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf114.fit.YB <- sem(model_pcdf114, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdf114.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf114.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdf114_slope <- '
+          slopePDS ~ c(c0,c1)*PCDF114c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF114c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf114_slope.fit.YB <- sem(model_pcdf114_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdf114_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCDF118 - mediation model grouped by sex
+
+```{r medmodel pcdf118}
+
+all_data_new$PCDF118c <- scale(all_data_new$PCDF118, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDF118c)
+kurtosis(all_data_new$PCDF118c)
+
+model_pcdf118 <- '
+          slopeDiffU15U6 ~ c(c0,c1)*PCDF118c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF118c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf118.fit.YB <- sem(model_pcdf118, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdf118.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf118.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdf118_slope <- '
+          slopePDS ~ c(c0,c1)*PCDF118c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF118c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'  
+model_pcdf118_slope.fit.YB <- sem(model_pcdf118_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdf118_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+
+# PCDF121 - mediation model grouped by sex
+
+```{r medmodel pcdf121}
+
+all_data_new$PCDF121c <- scale(all_data_new$PCDF121, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDF121c)
+kurtosis(all_data_new$PCDF121c)
+
+model_pcdf121 <- '
+          slopeDiffU15U6 ~ c(c0,c1)*PCDF121c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF121c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf121.fit.YB <- sem(model_pcdf121, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdf121.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf121.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdf121_slope <- '
+          slopePDS ~ c(c0,c1)*PCDF121c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF121c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf121_slope.fit.YB <- sem(model_pcdf121_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdf121_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# PCDF130 - mediation model grouped by sex
+
+```{r medmodel pcdf130}
+
+all_data_new$PCDF130c <- scale(all_data_new$PCDF130, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDF130c)
+kurtosis(all_data_new$PCDF130c)
+
+model_pcdf130 <- '
+          slopeDiffU15U6 ~ c(c0,c1)*PCDF130c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF130c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'  
+model_pcdf130.fit.YB <- sem(model_pcdf130, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdf130.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdf130_slope <- '
+          slopePDS ~ c(c0,c1)*PCDF130c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF130c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_slope.fit.YB <- sem(model_pcdf130_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdf130_slope.fit.YB, fit = TRUE, rsquar = TRUE) # DOES converte!
+
+```
+
+# PCDF131 - mediation model grouped by sex
+
+```{r medmodel pcdf131}
+
+all_data_new$PCDF131c <- scale(all_data_new$PCDF131, center = TRUE, scale = FALSE)
+
+skew(all_data_new$PCDF131c)
+kurtosis(all_data_new$PCDF131c)
+
+model_pcdf131 <- '
+          slopeDiffU15U6 ~ c(c0,c1)*PCDF131c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF131c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf131.fit.YB <- sem(model_pcdf131, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n")
+summary(model_pcdf131.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf131.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+
+model_pcdf131_slope <- '
+          slopePDS ~ c(c0,c1)*PCDF131c + c(b0,b1)*Mean_M
+          Mean_M ~ c(a0,a1)*PCDF131c
+		      indirect0 := a0*b0
+		      total0 := c0 + indirect0
+          indirect1 := a1*b1
+          total1 := c1 + indirect1
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf131_slope.fit.YB <- sem(model_pcdf131_slope, data = all_data_new, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x", group = "sex_n") 
+summary(model_pcdf131_slope.fit.YB, fit = TRUE, rsquar = TRUE) # does not converte!
+
+```
+
+# export results to tables (& figures)
+
+```{r export results}
+
+l_pcb77 <- parameterEstimates(model_pcb77.fit.YB)[c(1:6, 10:15), ]
+l_pcb77
+b_pcb77 <- gettextf('%s %.2f \n p=%.2f', l_pcb77$label, l_pcb77$est, digits = l_pcb77$pvalue)
+b_pcb77 <- gsub("\n p=NA", "", b_pcb77)
+b_pcb77
+x = c(1, .5, 0)
+y = c(0, .5, 0)
+ly = matrix(c(x, y), ncol=2)
+#semPaths(model_pcb77.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE)
+semPaths(model_pcb77.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcb77, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCB77"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcb81 <- parameterEstimates(model_pcb81.fit.YB)[c(1:6, 10:15), ]
+l_pcb81
+b_pcb81 <- gettextf('%s %.2f \n p=%.2f', l_pcb81$label, l_pcb81$est, digits = l_pcb81$pvalue)
+b_pcb81 <- gsub("\n p=NA", "", b_pcb81)
+b_pcb81
+semPaths(model_pcb81.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcb81, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCB81"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcb126 <- parameterEstimates(model_pcb126.fit.YB)[c(1:6, 10:15), ]
+l_pcb126
+b_pcb126 <- gettextf('%s %.2f \n p=%.2f', l_pcb126$label, l_pcb126$est, digits = l_pcb126$pvalue)
+b_pcb126 <- gsub("\n p=NA", "", b_pcb126)
+b_pcb126
+semPaths(model_pcb126.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcb126, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCB126"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcb169 <- parameterEstimates(model_pcb169.fit.YB)[c(1:6, 10:15), ]
+l_pcb169
+b_pcb169 <- gettextf('%s %.2f \n p=%.2f', l_pcb169$label, l_pcb169$est, digits = l_pcb169$pvalue)
+b_pcb169 <- gsub("\n p=NA", "", b_pcb169)
+b_pcb169
+semPaths(model_pcb169.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcb169, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCB169"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdd48 <- parameterEstimates(model_pcdd48.fit.YB)[c(1:6, 10:15), ]
+l_pcdd48
+b_pcdd48 <- gettextf('%s %.2f \n p=%.2f', l_pcdd48$label, l_pcdd48$est, digits = l_pcdd48$pvalue)
+b_pcdd48 <- gsub("\n p=NA", "", b_pcdd48)
+b_pcdd48
+semPaths(model_pcdd48.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdd48, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDD48"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+
+l_pcdd54 <- parameterEstimates(model_pcdd54.fit.YB)[c(1:6, 10:15), ]
+l_pcdd54
+b_pcdd54 <- gettextf('%s %.2f \n p=%.2f', l_pcdd54$label, l_pcdd54$est, digits = l_pcdd54$pvalue)
+b_pcdd54 <- gsub("\n p=NA", "", b_pcdd54)
+b_pcdd54
+semPaths(model_pcdd54.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdd54, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDD54"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdd48 <- parameterEstimates(model_pcdd48.fit.YB)[c(1:6, 10:15), ]
+l_pcdd48
+b_pcdd48 <- gettextf('%s %.2f \n p=%.2f', l_pcdd48$label, l_pcdd48$est, digits = l_pcdd48$pvalue)
+b_pcdd48 <- gsub("\n p=NA", "", b_pcdd48)
+b_pcdd48
+semPaths(model_pcdd48.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdd48, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDD48"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdd66 <- parameterEstimates(model_pcdd66.fit.YB)[c(1:6, 10:15), ]
+l_pcdd66
+b_pcdd66 <- gettextf('%s %.2f \n p=%.2f', l_pcdd66$label, l_pcdd66$est, digits = l_pcdd66$pvalue)
+b_pcdd66 <- gsub("\n p=NA", "", b_pcdd66)
+b_pcdd66
+semPaths(model_pcdd66.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdd66, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDD66"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdd67 <- parameterEstimates(model_pcdd67.fit.YB)[c(1:6, 10:15), ]
+l_pcdd67
+b_pcdd67 <- gettextf('%s %.2f \n p=%.2f', l_pcdd67$label, l_pcdd67$est, digits = l_pcdd67$pvalue)
+b_pcdd67 <- gsub("\n p=NA", "", b_pcdd67)
+b_pcdd67
+semPaths(model_pcdd67.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdd67, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDD67"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdd70 <- parameterEstimates(model_pcdd70.fit.YB)[c(1:6, 10:15), ]
+l_pcdd70
+b_pcdd70 <- gettextf('%s %.2f \n p=%.2f', l_pcdd70$label, l_pcdd70$est, digits = l_pcdd70$pvalue)
+b_pcdd70 <- gsub("\n p=NA", "", b_pcdd70)
+b_pcdd70
+semPaths(model_pcdd70.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdd70, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDD70"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdd73 <- parameterEstimates(model_pcdd73.fit.YB)[c(1:6, 10:15), ]
+l_pcdd73
+b_pcdd73 <- gettextf('%s %.2f \n p=%.2f', l_pcdd73$label, l_pcdd73$est, digits = l_pcdd73$pvalue)
+b_pcdd73 <- gsub("\n p=NA", "", b_pcdd73)
+b_pcdd73
+semPaths(model_pcdd73.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdd73, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDD73"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdd75 <- parameterEstimates(model_pcdd75.fit.YB)[c(1:6, 10:15), ]
+l_pcdd75
+b_pcdd75 <- gettextf('%s %.2f \n p=%.2f', l_pcdd75$label, l_pcdd75$est, digits = l_pcdd75$pvalue)
+b_pcdd75 <- gsub("\n p=NA", "", b_pcdd75)
+b_pcdd75
+semPaths(model_pcdd75.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdd75, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDD75"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdf114 <- parameterEstimates(model_pcdf114.fit.YB)[c(1:6, 10:15), ]
+l_pcdf114
+b_pcdf114 <- gettextf('%s %.2f \n p=%.2f', l_pcdf114$label, l_pcdf114$est, digits = l_pcdf114$pvalue)
+b_pcdf114 <- gsub("\n p=NA", "", b_pcdf114)
+b_pcdf114
+semPaths(model_pcdf114.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf114, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDF114"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdf118 <- parameterEstimates(model_pcdf118.fit.YB)[c(1:6, 10:15), ]
+l_pcdf118
+b_pcdf118 <- gettextf('%s %.2f \n p=%.2f', l_pcdf118$label, l_pcdf118$est, digits = l_pcdf118$pvalue)
+b_pcdf118 <- gsub("\n p=NA", "", b_pcdf118)
+b_pcdf118
+semPaths(model_pcdf118.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf118, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDF118"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdf121 <- parameterEstimates(model_pcdf121.fit.YB)[c(1:6, 10:15), ]
+l_pcdf121
+b_pcdf121 <- gettextf('%s %.2f \n p=%.2f', l_pcdf121$label, l_pcdf121$est, digits = l_pcdf121$pvalue)
+b_pcdf121 <- gsub("\n p=NA", "", b_pcdf121)
+b_pcdf121
+semPaths(model_pcdf121.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf121, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDF121"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdf130 <- parameterEstimates(model_pcdf130.fit.YB)[c(1:6, 10:15), ]
+l_pcdf130
+b_pcdf130 <- gettextf('%s %.2f \n p=%.2f', l_pcdf130$label, l_pcdf130$est, digits = l_pcdf130$pvalue)
+b_pcdf130 <- gsub("\n p=NA", "", b_pcdf130)
+b_pcdf130
+semPaths(model_pcdf130.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDF130"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdf130_slope <- parameterEstimates(model_pcdf130_slope.fit.YB)[c(1:6, 10:15), ]
+l_pcdf130_slope
+b_pcdf130_slope <- gettextf('%s %.2f \n p=%.2f', l_pcdf130_slope$label, l_pcdf130_slope$est, digits = l_pcdf130_slope$pvalue)
+b_pcdf130_slope <- gsub("\n p=NA", "", b_pcdf130_slope)
+b_pcdf130_slope
+semPaths(model_pcdf130_slope.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_slope, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("longitu.\npubert.\ndevelop.", "DNAm\nAR", "PCDF130"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+l_pcdf131 <- parameterEstimates(model_pcdf131.fit.YB)[c(1:6, 10:15), ]
+l_pcdf131
+b_pcdf131 <- gettextf('%s %.2f \n p=%.2f', l_pcdf131$label, l_pcdf131$est, digits = l_pcdf131$pvalue)
+b_pcdf131 <- gsub("\n p=NA", "", b_pcdf131)
+b_pcdf131
+semPaths(model_pcdf131.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = ly, rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf131, label.prop = 1,  edge.label.bg = FALSE, edge.label.cex = 1, fade = FALSE, nodeLabels = c("PDS score\n(t5-t0)", "DNAm\nAR", "PCDF131"), edge.label.position = .5, edge.width = .5, node.width = 1.7)
+
+```
+
+# post-hoc alpha-cumulation correction
+
+```{r post-hoc}
+# post-hoc alpha-cumulation correction
+
+pvalue_labels_pcb126 <- data.frame(parameterEstimates(model_pcb126.fit.YB, ci = T, boot.ci.type = "bca.simple"))
+pvalue_labels_pcdf130 <- data.frame(parameterEstimates(model_pcdf130.fit.YB, ci = T, boot.ci.type = "bca.simple"))
+
+pvalues_all <- c(pvalue_labels_pcb126$pvalue[10], pvalue_labels_pcdf130$pvalue[10], 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+
+pvalue_a1_FDR <- p.adjust(pvalues_all, method = "BH") # ns
+
+```
+
+# save
+
+```{r save}
+
+#save.image("path/mediation_ARbisulfitseq_image_fullmoderation_grouped2.RData")
+
+```

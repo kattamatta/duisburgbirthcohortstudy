@@ -1,0 +1,46 @@
+---
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(parameters)
+#library(xts)
+
+```
+
+```{r parse-parameters}
+# rm(list = ls())
+
+# load("path/mediation_EWAS_IQ_image_N142_nonlog.RData")
+# load("path/mediation_WGCNA_IQ_image_N142_nonlog.RData")
+# load("path/mediation_ARbisulfitseq_IQ_image_fullmoderation_grouped_nonlog2.RData")
+# load("path/mediation_ESR1bisulfitseq_IQ_image_nonlog2.RData")
+# load("path/mediation_ESR2bisulfitseq_IQ_image_nonlog.RData")
+
+
+modellist <- ls(pattern = "\\.fit\\.YB$")
+#modellist <- ls(pattern = "\\BSIDmental24.fit\\.YB$")
+all_tables <- vector(mode = "list", length = length(modellist))
+names(all_tables) <- modellist
+#i <- modellist[[1L]]
+  
+for(i in modellist){
+y <- capture.output(parameters(mget(i)[[1]]))
+z <- paste0("|", y, "|")
+z <- gsub(z, pattern = "||", fixed = TRUE, replacement = "")
+
+header_rows <- grepl(z, pattern = "|#", fixed = TRUE)
+z[header_rows] <- gsub(z[header_rows], pattern = "|", fixed = TRUE, replacement = "")
+
+rule_rows <- grep(z, pattern = "|---", fixed = TRUE)
+rule_list <- lapply(strsplit(z[rule_rows - 1], split = "|", fixed = TRUE), length)
+rule_list <- lapply(rule_list, function(x){rep("|", x)})
+z[rule_rows] <- unlist(lapply(rule_list, paste, collapse = "---"))
+all_tables[[i]] <- paste(z, collapse = "\n")
+}
+
+knitr::asis_output(paste(paste0("## ", names(all_tables)), unlist(all_tables), collapse = "\n", sep = "\n\n"))
+
+```
+

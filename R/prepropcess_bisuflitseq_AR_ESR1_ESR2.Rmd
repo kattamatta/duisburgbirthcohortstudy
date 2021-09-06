@@ -1,0 +1,135 @@
+---
+title: "preprocess_candgene_bisulfitseq"
+author: "Katharina Mattonet"
+date: "10 März 2021"
+output: html_document
+---
+
+# load libraries
+
+```{r libraries}
+library(readxl)
+```
+
+
+# load data
+
+```{r load data}
+
+AR <- read_excel("path/Zusammenfassung_AR_condensed.xlsx")
+
+ESR1 <- read_excel("path/Zusammenfassung_ESR1_condensed.xlsx")
+
+ESR2 <- read_excel("path/Zusammenfassung_ESR2_condensed.xlsx")
+
+```
+
+# calculate M-value function (from RnBeads)
+
+```{r M-value fucntion}
+
+rnb.beta2mval <- function(betas, epsilon = 0.00001) {
+betas[betas < epsilon] <- epsilon
+	betas[betas > (1 - epsilon)] <- 1 - epsilon
+	return(log2(betas))
+}
+
+```
+
+# preprocess data AR
+
+```{r preprocess data AR}
+
+AR$D_StdNr <- gsub(".* ","", AR$`Sample ID`)
+AR$D_StdNr <- as.integer(AR$D_StdNr)
+AR[c("Assay", "Sample ID", "Note", "Quality Edited", "Parameters Edited", "Number of included methylations")] <- NULL
+AR <- AR[, c("D_StdNr", "CpG-67", "CpG-62", "CpG-53", "CpG-46", "CpG-41")]
+
+AR$`CpG-67_b` <- (AR$`CpG-67`)/100
+AR$`CpG-62_b` <- (AR$`CpG-62`)/100
+AR$`CpG-53_b` <- (AR$`CpG-53`)/100
+AR$`CpG-46_b` <- (AR$`CpG-46`)/100
+AR$`CpG-41_b` <- (AR$`CpG-41`)/100
+
+betasAR <- data.frame(AR$`CpG-67_b`, AR$`CpG-62_b`, AR$`CpG-53_b`, AR$`CpG-46_b`, AR$`CpG-41_b`)
+colnames(betasAR) <- c("CpG-67_M", "CpG-62_M", "CpG-53_M", "CpG-46_M", "CpG-41_M")
+
+MvalsAR <- rnb.beta2mval(betasAR)
+AR <- cbind(AR, MvalsAR)
+
+AR$Mean_b <- rowMeans(AR[, c("CpG-67_b", "CpG-62_b", "CpG-53_b", "CpG-46_b", "CpG-41_b")])
+AR$Mean_M <- rowMeans(AR[, c("CpG-67_M", "CpG-62_M", "CpG-53_M", "CpG-46_M", "CpG-41_M")])
+
+AR[, c("CpG-67", "CpG-62", "CpG-53", "CpG-46", "CpG-41")] <- NULL
+
+```
+
+# preprocess data ESR1
+
+```{r preprocess data ESR1}
+
+ESR1$D_StdNr <- gsub(".* ","", ESR1$`Sample ID`)
+ESR1$D_StdNr <- as.integer(ESR1$D_StdNr)
+ESR1[c("Assay", "Sample ID", "Note", "Quality Edited", "Parameters Edited", "Number of included methylations")] <- NULL
+ESR1 <- ESR1[, c("D_StdNr", "CpG+7", "CpG+10", "CpG+33", "CpG+41")]
+
+ESR1$`CpG+7_b` <- (ESR1$`CpG+7`)/100
+ESR1$`CpG+10_b` <- (ESR1$`CpG+10`)/100
+ESR1$`CpG+33_b` <- (ESR1$`CpG+33`)/100
+ESR1$`CpG+41_b` <- (ESR1$`CpG+41`)/100
+
+betasESR1 <- data.frame(ESR1$`CpG+7_b`, ESR1$`CpG+10_b`, ESR1$`CpG+33_b`, ESR1$`CpG+41_b`)
+colnames(betasESR1) <- c("CpG+7_M", "CpG+10_M", "CpG+33_M", "CpG+41_M")
+
+MvalsESR1 <- rnb.beta2mval(betasESR1)
+ESR1 <- cbind(ESR1, MvalsESR1)
+
+ESR1$Mean_b <- rowMeans(ESR1[, c("CpG+7_b", "CpG+10_b", "CpG+33_b", "CpG+41_b")])
+ESR1$Mean_M <- rowMeans(ESR1[, c("CpG+7_M", "CpG+10_M", "CpG+33_M", "CpG+41_M")])
+
+ESR1[, c("CpG+7", "CpG+10", "CpG+33", "CpG+41")] <- NULL
+
+```
+
+# preprocess data ESR2
+
+```{r preprocess data ESR2}
+ESR2$D_StdNr <- gsub(".* ","", ESR2$`Sample ID`)
+ESR2$D_StdNr <- as.integer(ESR2$D_StdNr)
+ESR2[c("Assay", "Sample ID", "Note", "Quality Edited", "Parameters Edited", "Number of included methylations")] <- NULL
+ESR2 <- ESR2[, c("D_StdNr", "CpG-82", "CpG-80", "CpG-78", "CpG-75", "CpG-72", "CpG-68", "CpG-56", "CpG-53")]
+
+ESR2$`CpG-82_b` <- (ESR2$`CpG-82`)/100
+ESR2$`CpG-80_b` <- (ESR2$`CpG-80`)/100
+ESR2$`CpG-78_b` <- (ESR2$`CpG-78`)/100
+ESR2$`CpG-75_b` <- (ESR2$`CpG-75`)/100
+ESR2$`CpG-72_b` <- (ESR2$`CpG-72`)/100
+ESR2$`CpG-68_b` <- (ESR2$`CpG-68`)/100
+ESR2$`CpG-56_b` <- (ESR2$`CpG-56`)/100
+ESR2$`CpG-53_b` <- (ESR2$`CpG-53`)/100
+
+betasESR2 <- data.frame(ESR2$`CpG-82_b`, ESR2$`CpG-80_b`, ESR2$`CpG-78_b`, ESR2$`CpG-75_b`, ESR2$`CpG-72_b`, ESR2$`CpG-68_b`, ESR2$`CpG-56_b`,ESR2$`CpG-53_b`)
+colnames(betasESR2) <- c("CpG-82_M", "CpG-80_M", "CpG-78_M", "CpG-75_M", "CpG-72_M", "CpG-68_M", "CpG-56_M", "CpG-53_M")
+
+MvalsESR2 <- rnb.beta2mval(betasESR2)
+ESR2 <- cbind(ESR2, MvalsESR2)
+
+ESR2$Mean_b <- rowMeans(ESR2[, c("CpG-82_b", "CpG-80_b", "CpG-78_b", "CpG-75_b", "CpG-72_b", "CpG-68_b", "CpG-56_b", "CpG-53_b")])
+ESR2$Mean_M <- rowMeans(ESR2[, c("CpG-82_M", "CpG-80_M", "CpG-78_M", "CpG-75_M", "CpG-72_M", "CpG-68_M", "CpG-56_M", "CpG-53_M")])
+
+ESR2[, c("CpG-82", "CpG-80", "CpG-78", "CpG-75", "CpG-72", "CpG-68", "CpG-56", "CpG-53")] <- NULL
+
+
+```
+
+# save
+
+```{r save}
+
+save(AR, file = "path/preprocessed_AR.RData")
+
+save(ESR1, file = "path/preprocessed_ESR1.RData")
+
+save(ESR2, file = "path/preprocessed_ESR2.RData")
+```
+

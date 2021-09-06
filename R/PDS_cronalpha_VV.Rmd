@@ -1,0 +1,226 @@
+---
+title: "PDS Reliabilität"
+author: "Vanessa Vogel"
+date: "10 3 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Preparations
+```{r preparations, warnings = FALSE}
+load("path/PDS_item_U6U11_N157_final.RData")
+load("path/PDS_item_U6U11_N82_final.RData")
+library(dplyr)
+library(psych)
+```
+
+# subsets males and females
+```{r subsets}
+N157_males <- subset(PDS_items_U6U11_N157, PDS_items_U6U11_N157$Sex_Kind == 1) # 1 = male
+N157_females <- subset(PDS_items_U6U11_N157, PDS_items_U6U11_N157$Sex_Kind == 2) # 2 = female
+N82_males <- subset(PDS_items_U6U11_N82, PDS_items_U6U11_N82$Sex_Kind == 1)
+N82_females <- subset(PDS_items_U6U11_N82, PDS_items_U6U11_N82$Sex_Kind == 2)
+```
+
+# select items
+```{r select items}
+#U6
+U6_all_157 <- select(PDS_items_U6U11_N157, U6_PDS_K_1, U6_PDS_K_2, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+U6_males_157 <- select(N157_males, U6_PDS_K_1, U6_PDS_K_2, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+U6_females_157 <- select(N157_females, U6_PDS_K_1, U6_PDS_K_2, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+U6_all_82 <- select(PDS_items_U6U11_N82, U6_PDS_K_1, U6_PDS_K_2, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+U6_males_82 <- select(N82_males, U6_PDS_K_1, U6_PDS_K_2, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+U6_females_82 <- select(N82_females, U6_PDS_K_1, U6_PDS_K_2, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+U6_all_82_short <- select(PDS_items_U6U11_N82, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+U6_males_82_short <- select(N82_males, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+U6_females_82_short <- select(N82_females, U6_PDS_K_3, U6_PDS_K_4, U6_PDS_K_5r)
+
+#U7
+U7_all_157 <- select(PDS_items_U6U11_N157, U7_PDS_K_1, U7_PDS_K_2, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+U7_males_157 <- select(N157_males, U7_PDS_K_1, U7_PDS_K_2, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+U7_females_157 <- select(N157_females, U7_PDS_K_1, U7_PDS_K_2, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+U7_all_82 <- select(PDS_items_U6U11_N82, U7_PDS_K_1, U7_PDS_K_2, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+U7_males_82 <- select(N82_males, U7_PDS_K_1, U7_PDS_K_2, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+U7_females_82 <- select(N82_females, U7_PDS_K_1, U7_PDS_K_2, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+U7_all_82_short <- select(PDS_items_U6U11_N82, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+U7_males_82_short <- select(N82_males, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+U7_females_82_short <- select(N82_females, U7_PDS_K_3, U7_PDS_K_4, U7_PDS_K_5r)
+
+#U8
+U8_all_157 <- select(PDS_items_U6U11_N157, U8_PDS_K_1, U8_PDS_K_2, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+U8_males_157 <- select(N157_males, U8_PDS_K_1, U8_PDS_K_2, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+U8_females_157 <- select(N157_females, U8_PDS_K_1, U8_PDS_K_2, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+U8_all_82 <- select(PDS_items_U6U11_N82, U8_PDS_K_1, U8_PDS_K_2, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+U8_males_82 <- select(N82_males, U8_PDS_K_1, U8_PDS_K_2, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+U8_females_82 <- select(N82_females, U8_PDS_K_1, U8_PDS_K_2, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+U8_all_82_short <- select(PDS_items_U6U11_N82, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+U8_males_82_short <- select(N82_males, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+U8_females_82_short <- select(N82_females, U8_PDS_K_3, U8_PDS_K_4, U8_PDS_K_5r)
+
+#U9
+U9_all_157 <- select(PDS_items_U6U11_N157, U9_PDS_K_1, U9_PDS_K_2, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+U9_males_157 <- select(N157_males, U9_PDS_K_1, U9_PDS_K_2, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+U9_females_157 <- select(N157_females, U9_PDS_K_1, U9_PDS_K_2, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+U9_all_82 <- select(PDS_items_U6U11_N82, U9_PDS_K_1, U9_PDS_K_2, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+U9_males_82 <- select(N82_males, U9_PDS_K_1, U9_PDS_K_2, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+U9_females_82 <- select(N82_females, U9_PDS_K_1, U9_PDS_K_2, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+U9_all_82_short <- select(PDS_items_U6U11_N82, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+U9_males_82_short <- select(N82_males, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+U9_females_82_short <- select(N82_females, U9_PDS_K_3, U9_PDS_K_4, U9_PDS_K_5r)
+
+#U10
+U10_all_157 <- select(PDS_items_U6U11_N157, U10_PDS_K_1, U10_PDS_K_2, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+U10_males_157 <- select(N157_males, U10_PDS_K_1, U10_PDS_K_2, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+U10_females_157 <- select(N157_females, U10_PDS_K_1, U10_PDS_K_2, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+U10_all_82 <- select(PDS_items_U6U11_N82, U10_PDS_K_1, U10_PDS_K_2, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+U10_males_82 <- select(N82_males, U10_PDS_K_1, U10_PDS_K_2, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+U10_females_82 <- select(N82_females, U10_PDS_K_1, U10_PDS_K_2, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+U10_all_82_short <- select(PDS_items_U6U11_N82, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+U10_males_82_short <- select(N82_males, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+U10_females_82_short <- select(N82_females, U10_PDS_K_3, U10_PDS_K_4, U10_PDS_K_5r)
+
+#U11
+U11_all_157 <- select(PDS_items_U6U11_N157, U11_PDS_K_1, U11_PDS_K_2, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+
+U11_males_157 <- select(N157_males, U11_PDS_K_1, U11_PDS_K_2, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+
+U11_females_157 <- select(N157_females, U11_PDS_K_1, U11_PDS_K_2, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+
+U11_all_82 <- select(PDS_items_U6U11_N82, U11_PDS_K_1, U11_PDS_K_2, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+
+U11_males_82 <- select(N82_males, U11_PDS_K_1, U11_PDS_K_2, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+
+U11_females_82 <- select(N82_females, U11_PDS_K_1, U11_PDS_K_2, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+
+U11_all_82_short <- select(PDS_items_U6U11_N82, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+
+U11_males_82_short <- select(N82_males, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+
+U11_females_82_short <- select(N82_females, U11_PDS_K_3, U11_PDS_K_4, U11_PDS_K_5r)
+```
+
+# Cronbach’s α berechnen
+## U6
+```{r U6}
+alpha(U6_all_157, na.rm = TRUE)
+alpha(U6_females_157, na.rm = TRUE)
+alpha(U6_males_157, na.rm = TRUE)
+alpha(U6_all_82, na.rm = TRUE)
+alpha(U6_females_82, na.rm = TRUE)
+alpha(U6_males_82, na.rm = TRUE)
+alpha(U6_all_82_short)
+alpha(U6_females_82_short)
+alpha(U6_males_82_short)
+
+#Inter-Item correlation matrix for U6_females_82_short due to negative alpha
+corr.test(U6_females_82_short)
+var(U6_females_82_short)
+```
+
+## U7
+```{r U7}
+alpha(U7_all_157, na.rm = TRUE)
+alpha(U7_females_157, na.rm = TRUE)
+alpha(U7_males_157, na.rm = TRUE, impute = "means") #erzeugt sonst Fehler
+alpha(U7_all_82, na.rm = TRUE)
+alpha(U7_females_82, na.rm = TRUE)
+alpha(U7_males_82, na.rm = TRUE, impute = "means") #erzeugt sonst Fehler
+alpha(U7_all_82_short, na.rm = TRUE)
+alpha(U7_females_82_short, na.rm = TRUE)
+alpha(U7_males_82_short, na.rm = TRUE)
+```
+
+## U8
+```{r U8}
+alpha(U8_all_157, na.rm = TRUE)
+alpha(U8_females_157, na.rm = TRUE)
+alpha(U8_males_157, na.rm = TRUE)
+alpha(U8_all_82, na.rm = TRUE)
+alpha(U8_females_82, na.rm = TRUE)
+alpha(U8_males_82, na.rm = TRUE)
+alpha(U8_all_82_short, na.rm = TRUE)
+alpha(U8_females_82_short, na.rm = TRUE)
+alpha(U8_males_82_short, na.rm = TRUE)
+```
+
+## U9
+```{r U9}
+alpha(U9_all_157, na.rm = TRUE)
+alpha(U9_females_157, na.rm = TRUE)
+alpha(U9_males_157, na.rm = TRUE)
+alpha(U9_all_82, na.rm = TRUE)
+alpha(U9_females_82, na.rm = TRUE)
+alpha(U9_males_82, na.rm = TRUE)
+alpha(U9_all_82_short, na.rm = TRUE)
+alpha(U9_females_82_short, na.rm = TRUE)
+alpha(U9_males_82_short, na.rm = TRUE)
+```
+
+## U10
+```{r U10}
+alpha(U10_all_157, na.rm = TRUE)
+alpha(U10_females_157, na.rm = TRUE)
+alpha(U10_males_157, na.rm = TRUE)
+alpha(U10_all_82, na.rm = TRUE)
+alpha(U10_females_82, na.rm = TRUE)
+alpha(U10_males_82, na.rm = TRUE)
+alpha(U10_all_82_short, na.rm = TRUE)
+alpha(U10_females_82_short, na.rm = TRUE)
+alpha(U10_males_82_short, na.rm = TRUE)
+```
+
+## U11
+```{r U11}
+alpha(U11_all_157, na.rm = TRUE)
+alpha(U11_females_157, na.rm = TRUE)
+alpha(U11_males_157, na.rm = TRUE)
+alpha(U11_all_82, na.rm = TRUE)
+alpha(U11_females_82, na.rm = TRUE)
+alpha(U11_males_82, na.rm = TRUE)
+alpha(U11_all_82_short, na.rm = TRUE)
+alpha(U11_females_82_short, na.rm = TRUE)
+alpha(U11_males_82_short, na.rm = TRUE)
+```

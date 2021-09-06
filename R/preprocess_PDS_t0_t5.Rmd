@@ -1,0 +1,225 @@
+---
+title: "preprocess_PDS"
+author: "Katharina Mattonet"
+date: "29 September 2020"
+output: html_document
+---
+
+# load libraries
+
+```{r libraries}
+library(dplyr)
+library(readxl)
+library(lubridate)
+```
+
+# load data
+
+```{r load data}
+U6_PDS <- read_excel("pathdbo_U6_PDS.xlsx")
+U7_PDS <- read_excel("pathdbo_U7_PDS.xlsx")
+U8_PDS <- read_excel("pathdbo_U8_PDS.xlsx")
+U9_PDS <- read_excel("pathdbo_U9_PDS.xlsx")
+U10_PDS <- read_excel("pathdbo_U10_PDS.xlsx")
+U11_PDS <- read.csv2("pathU11_PDS_Bochum_und_DU_kodiert.csv")
+Kollektiv <- read_excel("path/Kollektiv_DU_BO_Kodierung.xlsx") # coding: Kollektiv: 1 = Duisburg (2000), 2 = Bochum (2009); Sex_Kind: 1 = boy, 2 = girl
+EPICLaufnr_VpNr_Kodierung <- read.csv("path/EPICLaufnr_VpNr_Kodierung.csv", sep=";")
+Alter_M_K <- read.delim2("path/Alter_M_K.txt")
+
+```
+
+# combinde data
+
+```{r combinde data}
+# prepare data
+Kollektiv$Kodierung <- NULL
+Kol_Du <- Kollektiv[Kollektiv$Kollektiv == 1, ]
+
+colnames(U6_PDS)[1] <- "StdNr"
+U6_PDS$Sex_Kind <- NULL
+U6_PDS$X_last_modified_by <- NULL
+U6_PDS$X_last_modified_date <- NULL
+
+colnames(U7_PDS)[1] <- "StdNr"
+U7_PDS$Sex_Kind <- NULL
+U7_PDS$X_last_modified_by <- NULL
+U7_PDS$X_last_modified_date <- NULL
+
+colnames(U8_PDS)[1] <- "StdNr"
+U8_PDS$Sex_Kind <- NULL
+U8_PDS$X_last_modified_by <- NULL
+U8_PDS$X_last_modified_date <- NULL
+
+colnames(U9_PDS)[1] <- "StdNr"
+U9_PDS$Sex_Kind <- NULL
+U9_PDS$X_last_modified_by <- NULL
+U9_PDS$X_last_modified_date <- NULL
+
+colnames(U10_PDS)[1] <- "StdNr"
+U10_PDS$Sex_Kind <- NULL
+U10_PDS$X_last_modified_by <- NULL
+U10_PDS$X_last_modified_date <- NULL
+
+U11_PDS$Sex_Kind <- NULL
+
+dates_K <- data.frame(select(Alter_M_K, c("StdNr", "U6_PDS_K_Datum", "U7_PDS_K_Datum", "U8_PDS_K_Datum", "U9_PDS_K_Datum")))
+dates_K_U10 <- data.frame(Alter_M_K$Geburtsdatum_Kind, U10_PDS$U10_PDS_K_Datum)
+dates_K <- cbind(dates_K, dates_K_U10)
+dates_K_U11 <- data.frame(select(U11_PDS, c("StdNr", "U11_PDS_K_Datum")))
+dates_K <- left_join(dates_K, dates_K_U11)
+
+dates_K$birth_K <- strptime(as.character(dates_K$Alter_M_K.Geburtsdatum_Kind), "%d.%m.%y")
+dates_K$Alter_M_K.Geburtsdatum_Kind <- NULL
+dates_K$U6_PDS_K_Datum <- strptime(as.character(dates_K$U6_PDS_K_Datum), "%d.%m.%y")
+dates_K$U7_PDS_K_Datum <- strptime(as.character(dates_K$U7_PDS_K_Datum), "%d.%m.%y")
+dates_K$U8_PDS_K_Datum <- strptime(as.character(dates_K$U8_PDS_K_Datum), "%d.%m.%y")
+dates_K$U9_PDS_K_Datum <- strptime(as.character(dates_K$U9_PDS_K_Datum), "%d.%m.%y")
+colnames(dates_K)[6] <- "U10_PDS_K_Datum"
+dates_K$U11_PDS_K_Datum <- strptime(as.character(dates_K$U11_PDS_K_Datum), "%m/%e/%Y")
+
+from <- dates_K$birth_K
+
+age <- function(from, to) {
+    from_lt = as.POSIXlt(from)
+    to_lt = as.POSIXlt(to)
+    
+    age = to_lt$year - from_lt$year
+
+    ifelse(to_lt$mon < from_lt$mon |
+               (to_lt$mon == from_lt$mon & to_lt$mday < from_lt$mday),
+           age - 1, age)
+}
+
+mon <- function(from, to) {
+    from_lt = as.POSIXlt(from)
+    to_lt = as.POSIXlt(to)
+    
+    mon = to_lt$mon - from_lt$mon
+    
+    ifelse(to_lt$mon < from_lt$mon, (round(((12-(abs(mon)))/12), digit = 3)), (round((mon/12), digit = 3)))
+}
+
+to <- dates_K$U6_PDS_K_Datum 
+dates_K$U6_PDS_K_Alter_Jahr <- age(from, to)
+dates_K$U6_PDS_K_Alter_Monate <- mon(from,to)
+dates_K$U6_PDS_K_Alter <- dates_K$U6_PDS_K_Alter_Jahr + dates_K$U6_PDS_K_Alter_Monate
+
+to <- dates_K$U7_PDS_K_Datum 
+dates_K$U7_PDS_K_Alter_Jahr <- age(from, to)
+dates_K$U7_PDS_K_Alter_Monate <- mon(from,to)
+dates_K$U7_PDS_K_Alter <- dates_K$U7_PDS_K_Alter_Jahr + dates_K$U7_PDS_K_Alter_Monate
+
+to <- dates_K$U8_PDS_K_Datum 
+dates_K$U8_PDS_K_Alter_Jahr <- age(from, to)
+dates_K$U8_PDS_K_Alter_Monate <- mon(from,to)
+dates_K$U8_PDS_K_Alter <- dates_K$U8_PDS_K_Alter_Jahr + dates_K$U8_PDS_K_Alter_Monate
+
+to <- dates_K$U9_PDS_K_Datum 
+dates_K$U9_PDS_K_Alter_Jahr <- age(from, to)
+dates_K$U9_PDS_K_Alter_Monate <- mon(from,to)
+dates_K$U9_PDS_K_Alter <- dates_K$U9_PDS_K_Alter_Jahr + dates_K$U9_PDS_K_Alter_Monate
+
+to <- dates_K$U10_PDS_K_Datum 
+dates_K$U10_PDS_K_Alter_Jahr <- age(from, to)
+dates_K$U10_PDS_K_Alter_Monate <- mon(from,to)
+dates_K$U10_PDS_K_Alter <- dates_K$U10_PDS_K_Alter_Jahr + dates_K$U10_PDS_K_Alter_Monate
+
+
+to <- dates_K$U11_PDS_K_Datum 
+dates_K$U11_PDS_K_Alter_Jahr <- age(from, to)
+dates_K$U11_PDS_K_Alter_Monate <- mon(from,to)
+dates_K$U11_PDS_K_Alter <- dates_K$U11_PDS_K_Alter_Jahr + dates_K$U11_PDS_K_Alter_Monate
+
+
+Alter_K <- subset(dates_K, select = c(StdNr, U6_PDS_K_Alter_Jahr:U11_PDS_K_Alter))
+
+# combinde data
+Kol_PDS <- left_join(Kol_Du, U6_PDS, by = "StdNr")
+Kol_PDS <- left_join(Kol_PDS, U7_PDS, by = "StdNr")
+Kol_PDS <- left_join(Kol_PDS, U8_PDS, by = "StdNr")
+Kol_PDS <- left_join(Kol_PDS, U9_PDS, by = "StdNr")
+Kol_PDS <- left_join(Kol_PDS, U10_PDS, by = "StdNr")
+Kol_PDS <- left_join(Kol_PDS, U11_PDS, by = "StdNr")
+Kol_PDS <- left_join(Kol_PDS, Alter_K, by = "StdNr")
+
+# recode data
+## # based on Carskadon M. A., Acebo C. A Self-Administered Rating-Scale for Pubertal Development. J. Adolescent. Health. 1993; 14, 190±95.
+
+Kol_PDS$U6_PDS_K_5r <- with(Kol_PDS, ifelse(Sex_Kind == 2 & U6_PDS_K_5 == 1, 4, ifelse(Sex_Kind == 2 & U6_PDS_K_5 == 2, 1, U6_PDS_K_5)))
+Kol_PDS$U7_PDS_K_5r <- with(Kol_PDS, ifelse(Sex_Kind == 2 & U7_PDS_K_5 == 1, 4, ifelse(Sex_Kind == 2 & U7_PDS_K_5 == 2, 1, U7_PDS_K_5)))
+Kol_PDS$U8_PDS_K_5r <- with(Kol_PDS, ifelse(Sex_Kind == 2 & U8_PDS_K_5 == 1, 4, ifelse(Sex_Kind == 2 & U8_PDS_K_5 == 2, 1, U8_PDS_K_5)))
+Kol_PDS$U9_PDS_K_5r <- with(Kol_PDS, ifelse(Sex_Kind == 2 & U9_PDS_K_5 == 1, 4, ifelse(Sex_Kind == 2 & U9_PDS_K_5 == 2, 1, U9_PDS_K_5)))
+Kol_PDS$U10_PDS_K_5r <- with(Kol_PDS, ifelse(Sex_Kind == 2 & U10_PDS_K_5 == 1, 4, ifelse(Sex_Kind == 2 & U10_PDS_K_5 == 2, 1, U10_PDS_K_5)))
+
+Kol_PDS$U11_PDS_K_5r <- with(Kol_PDS, ifelse(Sex_Kind == 2 & U11_PDS_K_5 == 1, 4, ifelse(Sex_Kind == 2 & U11_PDS_K_5 == 2, 1, ifelse(Sex_Kind == 2 & U11_PDS_K_5 == 999, 0, U11_PDS_K_5))))
+Kol_PDS2 <- Kol_PDS
+
+# recode an all PDS_items with scores 0 and 5 to NA
+subvariables <- colnames(Kol_PDS2[, c(4:7, 22:25, 40:43, 65:68, 93:96, 121:124, 174:179)])
+subvariables
+Kol_PDS2[, subvariables][Kol_PDS2[, subvariables] == 0] <- NA
+any(Kol_PDS2[, subvariables] == 0) # non
+Kol_PDS2[, subvariables][Kol_PDS2[, subvariables] == 5] <- NA
+any(Kol_PDS2[, subvariables] == 5) # non
+```
+
+# calculate PDS scores
+
+```{r calculate PDS score for each U}
+# based on Carskadon M. A., Acebo C. A Self-Administered Rating-Scale for Pubertal Development. J. Adolescent. Health. 1993; 14, 190±95.
+## calculate mean scores using itmes 3 to 5
+
+PDS <- Kol_PDS2
+
+PDS$U6_PDS_K_mean <- rowMeans(subset(PDS, select = c(U6_PDS_K_3:U6_PDS_K_4, U6_PDS_K_5r)))
+PDS$U7_PDS_K_mean <- rowMeans(subset(PDS, select = c(U7_PDS_K_3:U7_PDS_K_4, U7_PDS_K_5r)))
+PDS$U8_PDS_K_mean <- rowMeans(subset(PDS, select = c(U8_PDS_K_3:U8_PDS_K_4, U8_PDS_K_5r)))
+PDS$U9_PDS_K_mean <- rowMeans(subset(PDS, select = c(U9_PDS_K_3:U9_PDS_K_4, U9_PDS_K_5r)))
+PDS$U10_PDS_K_mean <- rowMeans(subset(PDS, select = c(U10_PDS_K_3:U10_PDS_K_4, U10_PDS_K_5r)))
+PDS$U11_PDS_K_mean <- rowMeans(subset(PDS, select = c(U11_PDS_K_3:U11_PDS_K_4, U11_PDS_K_5r)))
+
+```
+
+# combine comp_PDS with avaiable samples from DNAm data
+
+```{r combine PDS with DNAm samples}
+colnames(PDS)[1] <- "B_StdNr"
+colnames(EPICLaufnr_VpNr_Kodierung) <- c("D_StdNr", "B_StdNr")
+coding <- EPICLaufnr_VpNr_Kodierung[, c(2:1)]
+
+PDS_B <- merge(coding, PDS, by = "B_StdNr") 
+
+PDS_B <- PDS_B[ !(PDS_B$D_StdNr %in% c(45, 68, 77, 80, 127, 160, 162)), ] # removed in mediation model because of non matching a-priori criteria regarding DNAm data or EDC data
+
+PDS_items_U6U11_N157 <- select(PDS_B, D_StdNr, Sex_Kind, U6_PDS_K_1:U6_PDS_K_5, U7_PDS_K_1:U7_PDS_K_5, U8_PDS_K_1:U8_PDS_K_5, U9_PDS_K_1:U9_PDS_K_5, U10_PDS_K_1:U10_PDS_K_5, U11_PDS_K_1:U11_PDS_K_5, U6_PDS_K_5r:U11_PDS_K_5r)
+
+#save(PDS_items_U6U11_N157, file = "path/PDS_item_U6U11_N157.RData")
+
+D_StdNr_keep <- PDS_B$`D_StdNr`[(rowSums(is.na(PDS_B[, c("U6_PDS_K_mean", "U7_PDS_K_mean", "U8_PDS_K_mean", "U9_PDS_K_mean", "U10_PDS_K_mean", "U11_PDS_K_mean")])) < 4) == TRUE] # in mixed model only samples with less than 4 timepoints == NA (missing at random) included
+
+PDS_items_U6U11_N82 <- PDS_items_U6U11_N157[(PDS_items_U6U11_N157$D_StdNr %in% D_StdNr_keep),]
+
+#save(PDS_items_U6U11_N82, file = "path/PDS_item_U6U11_N82.RData")
+
+```
+
+# select valid samples (no NA in PDS)
+
+```{r select valid samples}
+
+# data.frame with complete cases for U6 to U11
+PDS_B <- subset(PDS_B, select = c(B_StdNr, D_StdNr, Sex_Kind, U6_PDS_K_Alter, U7_PDS_K_Alter, U8_PDS_K_Alter, U9_PDS_K_Alter, U10_PDS_K_Alter, U11_PDS_K_Alter, U6_PDS_K_mean, U7_PDS_K_mean, U8_PDS_K_mean, U9_PDS_K_mean, U10_PDS_K_mean, U11_PDS_K_mean))
+PDS_Alter <- PDS_B
+
+#save(PDS_Alter, file = "path/PDS_AlterU6bisU11.RData")
+
+pds_u11_noNA <- na.omit(PDS_Alter$U11_PDS_K_mean)
+pds_u10_noNA <- na.omit(PDS_Alter$U1_PDS_K_mean)
+pds_u10_noNA <- na.omit(PDS_Alter$U10_PDS_K_mean)
+pds_u9_noNA <- na.omit(PDS_Alter$U9_PDS_K_mean)
+pds_u8_noNA <- na.omit(PDS_Alter$U8_PDS_K_mean)
+pds_u7_noNA <- na.omit(PDS_Alter$U7_PDS_K_mean)
+pds_u6_noNA <- na.omit(PDS_Alter$U6_PDS_K_mean)
+
+
+```

@@ -1,0 +1,55 @@
+---
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(parameters)
+#library(xts)
+
+```
+
+```{r parse-parameters}
+rm(list = ls())
+
+# load("path/mediation_EWAS_image4.RData")
+# model_pcdd67_slo.fit.YB <- model_pcdd67_slope.fit.YB
+
+# load("path/mediation_WGCNA_image4.RData")
+# model_pcdf130_slo_salmon_f.fit.YB <- model_pcdf130_slope_salmon_f.fit.YB
+# model_pcdf130_slo_cg11468953.fit.YB <- model_pcdf130_slope_cg11468953.fit.YB
+
+# load("path/mediation_ARbisulfitseq_image_fullmoderation_grouped2.RData")
+# model_pcdf130_slo.fit.YB <- model_pcdf130_slope.fit.YB
+
+# load("Cpath/mediation_ESR1bisulfitseq_image2.RData")
+
+# load("path/mediation_ESR2bisulfitseq_image2.RData")
+# model_pcdd70_slo.fit.YB <- model_pcdd70_slope.fit.YB
+# model_pcdf131_slo.fit.YB <- model_pcdf131_slope.fit.YB
+
+modellist <- ls(pattern = "\\.fit\\.YB$")
+modellist <- modellist[!grepl(modellist, pattern = "slope")]
+all_tables <- vector(mode = "list", length = length(modellist))
+names(all_tables) <- modellist
+#i <- modellist[[1L]]
+  
+for(i in modellist){
+y <- capture.output(parameters(mget(i)[[1]]))
+z <- paste0("|", y, "|")
+z <- gsub(z, pattern = "||", fixed = TRUE, replacement = "")
+
+header_rows <- grepl(z, pattern = "|#", fixed = TRUE)
+z[header_rows] <- gsub(z[header_rows], pattern = "|", fixed = TRUE, replacement = "")
+
+rule_rows <- grep(z, pattern = "|---", fixed = TRUE)
+rule_list <- lapply(strsplit(z[rule_rows - 1], split = "|", fixed = TRUE), length)
+rule_list <- lapply(rule_list, function(x){rep("|", x)})
+z[rule_rows] <- unlist(lapply(rule_list, paste, collapse = "---"))
+all_tables[[i]] <- paste(z, collapse = "\n")
+}
+
+knitr::asis_output(paste(paste0("## ", names(all_tables)), unlist(all_tables), collapse = "\n", sep = "\n\n"))
+
+```
+

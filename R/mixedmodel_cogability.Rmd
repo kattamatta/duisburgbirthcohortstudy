@@ -1,0 +1,332 @@
+---
+title: "mixedmodel_cogdev_sexcombined"
+author: "Katharina Mattonet"
+date: "15 März 2021"
+output: html_document
+---
+
+# load libraries
+
+```{r load libraries}
+library(lavaan)
+library(semPlot)
+library(semTools)
+library(lattice)
+library(tidyr)
+library(lme4)
+library(nlme)
+library(ggplot2)
+library(mice)
+library(finalfit)
+library(multilevel)
+library(dplyr)
+```
+
+# load data
+
+```{r load data}
+load(file = "path/preprocess_BayleyU2U4_HAWIKU7.RData")
+load(file = "path/pheno_data_N164.RData")
+load(file = "path/BayleyU2U4_HAWIKU7_lm_mixed_age_predicted.RData")
+
+```
+
+# prepare data and analysis of missing data patterns
+
+```{r prepare data and NA patterns}
+# prepare data
+sub_data <- subset(BSID_HAWIK, select = c("D_StdNr", "BSID_mental12_i", "BSID_mental24_i", "HAWIK_IQ", "age_month_12", "age_month_24", "age_months_HAWIK"))
+sub_data$D_StdNr <- as.character(sub_data$D_StdNr)
+sub_data <- cbind(sub_data, all_data$sex_n)
+colnames(sub_data)[8] <- "sex"
+sub_data <- sub_data[ !(sub_data$D_StdNr %in% c(45, 68, 77, 80, 127, 160, 162)), ] # remove items not matching a-priori inclusion criteria regarding DNAm data and EDC data
+
+
+## evaluate missing data paterns 
+#sub_data %>% ff_glimpse() # summarises a data frame
+#sub_data %>% missing_plot() # detecting patterns of missingness
+
+explanatory = c("sex", "age_month_12", "age_month_24", "age_months_HAWIK")
+dependent = c("BSID_mental12_i", "BSID_mental24_i", "HAWIK_IQ")
+#sub_data %>% missing_pattern(dependent, explanatory) #produces a table and a plot showing the pattern of missingness between variables
+#sub_data %>% missing_pairs(dependent, explanatory, showXAxisPlotLabels = FALSE)
+## PDS-outcome is missing conditional on PDS#-age -> missing at random (MAR) -> prediction allowed
+## partially differences in mean of boxplot -> missing at random (MAR) -> prediction allowed
+
+# remove samples with missing data at >= 2 time points of meausrment 
+#sub_data <- sub_data[rowSums(is.na(sub_data[, c("BSID_mental12_i", "BSID_mental24_i", "HAWIK_IQ")])) < 2,] # romved samples with >= 2 time points of meausurment with missing data from U6:U15
+
+# reevaluate missing data patern
+#sub_data %>% missing_pairs(dependent, explanatory)
+
+# impute age 
+sub_data$age_month_12imp <- ifelse(is.na(sub_data$age_month_12), round(mean(sub_data$age_month_12, na.rm = TRUE), digits = 3), sub_data$age_month_12)
+sub_data$age_month_24imp <- ifelse(is.na(sub_data$age_month_24), round(mean(sub_data$age_month_24, na.rm = TRUE), digits = 3), sub_data$age_month_24)
+sub_data$age_months_HAWIKimp <- ifelse(is.na(sub_data$age_months_HAWIK), round(mean(sub_data$age_months_HAWIK, na.rm = TRUE), digits = 3), sub_data$age_months_HAWIK)
+
+mean((sub_data$age_month_12imp)/12) # 1
+mean((sub_data$age_month_24imp)/12) # 2
+mean((sub_data$age_months_HAWIKimp)/12, na.rm = TRUE) # 8.6
+
+matrix_age_imp <- matrix(data = NA, ncol = 6, nrow = 3)
+rownames(matrix_age_imp) <- c("BSID t0", "BSID t1", "WISC t2")
+colnames(matrix_age_imp) <- c("observed age N", "observed age Mean", "observed age SD", "imputed age N", "imputed age Mean", "imputed age SD")
+
+matrix_age_imp[1,1] <- sum((is.na(sub_data$age_month_12) == FALSE))
+matrix_age_imp[1,2] <- round(mean(sub_data$age_month_12, na.rm = TRUE), digit = 2)
+matrix_age_imp[1,3] <- round(sd(sub_data$age_month_12, na.rm = TRUE), digit = 2)
+matrix_age_imp[1,4] <- sum((is.na(sub_data$age_month_12imp) == FALSE))
+matrix_age_imp[1,5] <- round(mean(sub_data$age_month_12imp, na.rm = TRUE), digit = 2)
+matrix_age_imp[1,6] <- round(sd(sub_data$age_month_12imp, na.rm = TRUE), digit = 2)
+
+matrix_age_imp[2,1] <- sum((is.na(sub_data$age_month_24) == FALSE))
+matrix_age_imp[2,2] <- round(mean(sub_data$age_month_24, na.rm = TRUE), digit = 2)
+matrix_age_imp[2,3] <- round(sd(sub_data$age_month_24, na.rm = TRUE), digit = 2)
+matrix_age_imp[2,4] <- sum((is.na(sub_data$age_month_24imp) == FALSE))
+matrix_age_imp[2,5] <- round(mean(sub_data$age_month_24imp, na.rm = TRUE), digit = 2)
+matrix_age_imp[2,6] <- round(sd(sub_data$age_month_24imp, na.rm = TRUE), digit = 2)
+
+matrix_age_imp[3,1] <- sum((is.na(sub_data$age_months_HAWIK) == FALSE))
+matrix_age_imp[3,2] <- round(mean(sub_data$age_months_HAWIK, na.rm = TRUE), digit = 2)
+matrix_age_imp[3,3] <- round(sd(sub_data$age_months_HAWIK, na.rm = TRUE), digit = 2)
+matrix_age_imp[3,4] <- sum((is.na(sub_data$age_months_HAWIKimp) == FALSE))
+matrix_age_imp[3,5] <- round(mean(sub_data$age_months_HAWIKimp, na.rm = TRUE), digit = 2)
+matrix_age_imp[3,6] <- round(sd(sub_data$age_months_HAWIKimp, na.rm = TRUE), digit = 2)
+
+#write.csv2(matrix_age_imp, file = "path/age_imp_N_M_SD.csv")
+
+sub_data$age_month_12imp_0 <- sub_data$age_month_12imp-sub_data$age_month_12imp
+sub_data$age_month_24imp_1 <- sub_data$age_month_24imp-sub_data$age_month_12imp
+sub_data$age_months_HAWIKimp_2 <- sub_data$age_months_HAWIKimp-sub_data$age_month_12imp
+
+
+# check mean for variable tt
+mean(sub_data$age_month_24imp_1) # 12 
+mean(sub_data$age_months_HAWIKimp_2) # 91 (7.6 years)
+```
+
+
+# data from wide to long
+
+```{r data long}
+## data from wide to long format
+all_data_long <- gather(sub_data, key = "cog_t", value = "cog", BSID_mental12_i, BSID_mental24_i, HAWIK_IQ)
+all_data_long1 <- gather(sub_data, key = "age", value = "age_0imp", age_month_12imp_0, age_month_24imp_1, age_months_HAWIKimp_2)
+all_data_long2 <- gather(sub_data, key = "age_2", value = "age_trueimp", age_month_12imp, age_month_24imp, age_months_HAWIKimp)
+all_data_long3 <- gather(sub_data, key = "age_3", value = "age_true", age_month_12, age_month_24, age_months_HAWIK)
+all_data_long <- cbind(all_data_long[, c("D_StdNr", "sex", "cog_t", "cog")], all_data_long1[, "age_0imp"], all_data_long2[, "age_trueimp"], all_data_long3[, "age_true"])
+colnames(all_data_long)[5] <- "age_0imp"
+colnames(all_data_long)[6] <- "age_trueimp"
+colnames(all_data_long)[7] <- "age_true"
+
+all_data_long <- all_data_long[order(all_data_long$D_StdNr), ]
+tt <- rep(c(0,12,91), length.out = nrow(all_data_long)) # code time points where PDS taken
+all_data_long$tt <- tt
+cog_t_n <- rep(c(12,24,91), length.out = nrow(all_data_long))
+all_data_long$cog_t_n <- cog_t_n
+all_data_long_inclNA <- all_data_long
+
+```
+
+# plot data for inspection
+
+```{r plot data}
+
+# Fitted linear regression with ordinary least square (OLS) trajectories superimposed on the empirical growth plots
+#all_data_long_noNA <- na.omit(all_data_long)
+xyplot(cog ~ tt | D_StdNr, data=all_data_long,
+        panel = function(x, y){
+    panel.xyplot(x, y)
+    panel.lmline(x, y)
+  }, as.table=T)
+
+
+acf(residuals(lm(all_data_long$cog ~ all_data_long$age_true), retype="normalized"), main = "Autocorrelation of first order of the Level 1 residuals") # autocorrelation of first level
+corr <- Hmisc::rcorr(as.matrix(sub_data[, c("BSID_mental12_i", "BSID_mental24_i", "HAWIK_IQ", "sex")]))
+corr # BSID_mental24_i & sex corr p < .05
+cor <- cor(sub_data[, c("BSID_mental12_i", "BSID_mental24_i", "HAWIK_IQ")], use = "pairwise.complete.obs")
+mean(c(cor["BSID_mental12_i", "BSID_mental24_i"], cor["BSID_mental24_i", "HAWIK_IQ"])) #  0.4505216
+Hmisc::rcorr(all_data_long$cog, all_data_long$sex) # sig
+summary(lme(cog ~ sex,
+                  data = all_data_long,
+                  method = "REML",
+                  random = ~ 1 | D_StdNr, na.action = na.exclude)) # sig
+```
+
+# set seed
+
+```{r seed}
+set.seed(123)
+```
+
+
+# model selecetion NEW (old at the bottom)
+
+```{r model selection}
+
+set.seed(123)
+
+intercept <- gls(cog  ~ 1+sex,
+                 data = all_data_long,
+                 method = "ML",
+                 na.action = na.exclude)
+summary(intercept)
+
+randomIntercept <- lme(cog  ~ age_0imp+sex, 
+                  data = all_data_long,
+                  random = ~ 1|D_StdNr, 
+                  method = "ML",
+                  na.action = na.exclude, 
+                  control=list(maxIter=10000, niterEM=10000))
+
+mixed_model <- lme(cog  ~ age_0imp+sex, 
+                  data = all_data_long,
+                  random = ~ age_0imp|D_StdNr, 
+                  method = "ML",
+                  na.action = na.exclude, 
+                  control=list(maxIter=10000, niterEM=10000))
+
+mixedAR_model <- lme(cog  ~ age_0imp+sex, 
+                  data = all_data_long,
+                  random = ~ age_0imp|D_StdNr, 
+                  method = "ML",
+                  correlation = corCAR1(form = ~ age_0imp | D_StdNr),
+                  na.action = na.exclude, 
+                  control=list(maxIter=10000, niterEM=10000))
+
+
+modelselecetion <- anova(intercept, randomIntercept, mixed_model, mixedAR_model)
+modelselecetion
+
+#write.csv(modelselecetion, file = "path/modelselectionANOVA.csv")
+
+mixed_model <- lme(cog  ~ age_0imp+sex, 
+                  data = all_data_long,
+                  random = ~ age_0imp|D_StdNr, 
+                  method = "ML",
+                  na.action = na.exclude, 
+                  control=list(maxIter=10000, niterEM=10000))
+
+mixed_model_sex <- lme(cog  ~ age_0imp*sex, 
+                  data = all_data_long,
+                  random = ~ age_0imp|D_StdNr, 
+                  method = "ML",
+                  na.action = na.exclude, 
+                  control=list(maxIter=10000, niterEM=10000))
+
+modelselecetion_sex <- anova(mixed_model, mixed_model_sex)
+modelselecetion_sex
+
+#write.csv(modelselecetion_sex, file = "path/modelselectionANOVA_sex.csv")
+
+```
+
+# final model
+
+```{r final model}
+
+model1_lme_lin <- lme(cog ~ age_0imp+sex, 
+                  data = all_data_long,
+                  method = "REML",
+                  random = ~ age_0imp | D_StdNr,
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+
+summary(model1_lme_lin)
+intervals(model1_lme_lin, method = "boot", boot.type = c("norm", "basic", "perc"), nsim = 1000) 
+plot(model1_lme_lin)
+plot(model1_lme_lin,sqrt(abs(resid(.)))~fitted(.),type=c("p","smooth"))
+plot(model1_lme_lin,factor(age_0imp)~resid(.))
+
+#slope <- coef(model1_lme_lin)$age_0imp
+#var(slope, na.rm = T) # 0.003438358
+
+predict <- predict(model1_lme_lin, newdata = all_data_long)
+all_data_long$cog_predict_mixed <- predict
+
+# transpone data to wide format
+all_data_wide <- pivot_wider(all_data_long, names_from = "cog_t", values_from = c("cog", "cog_predict_mixed", "age_trueimp", "age_0imp", "age_true", "tt", "cog_t_n"))
+
+df_cog_predicted_mixed_HAWIK_IQ <- subset(all_data_wide, select = c(D_StdNr, cog_predict_mixed_HAWIK_IQ))
+df_cog_predict_mixed_BSID_mental12_i <- subset(all_data_wide, select = c(D_StdNr, cog_predict_mixed_BSID_mental12_i))
+df_cog_predict_mixed_BSID_mental24_i <- subset(all_data_wide, select = c(D_StdNr, cog_predict_mixed_BSID_mental24_i))
+
+sub_data <- left_join(sub_data, df_cog_predicted_mixed_HAWIK_IQ)
+colnames(sub_data)[15] <- "predict_HAWIK_IQ_mixed"
+sub_data <- left_join(sub_data, df_cog_predict_mixed_BSID_mental12_i)
+colnames(sub_data)[16] <- "predict_BSID_mental12_i_mixed"
+sub_data <- left_join(sub_data, df_cog_predict_mixed_BSID_mental24_i)
+colnames(sub_data)[17] <- "predict_BSID_mental24_i_mixed"
+
+mean(sub_data$age_months_HAWIKimp)
+
+mean(sub_data$predict_HAWIK_IQ_mixed, na.rm = T)
+sd(sub_data$predict_HAWIK_IQ_mixed, na.rm = T)
+
+sub_data_f <- sub_data[sub_data$sex==0, ]
+mean(sub_data_f$predict_HAWIK_IQ_mixed)
+sd(sub_data_f$predict_HAWIK_IQ_mixed)
+
+sub_data_m <- sub_data[sub_data$sex==1, ]
+mean(sub_data_m$predict_HAWIK_IQ_mixed, na.rm = T)
+sd(sub_data_m$predict_HAWIK_IQ_mixed, na.rm = T)
+```
+
+# plot results
+
+```{r plot }
+xyplot(cog_predict_mixed ~ tt | D_StdNr, data=all_data_long,
+        panel = function(x, y){
+    panel.xyplot(x, y)
+    panel.lmline(x, y)
+  }, as.table=T)
+
+# boxplot of estimated predict_HAWIK_IQ_mixed
+df1 <- subset(sub_data, select = c(8, 15))
+
+df1.1 <- data.frame(sex=c("All"),
+                  predict_HAWIK_IQ_mixed=df1$predict_HAWIK_IQ_mixed)
+df1 <- rbind(df1, df1.1)
+
+ggplot(df1, aes(sex, predict_HAWIK_IQ_mixed)) +
+  geom_boxplot(outlier.shape = NA) +
+  scale_x_discrete(labels = c("female (N = 88"," male (N = 75)", "all (N = 155)")) +
+  xlab("") +
+  ylab("sample´s predicted slope") +
+  theme_minimal()
+
+
+```
+
+# save
+
+```{r save}
+
+cogDev_age_predicted <- sub_data
+
+#save(cogDev_age_predicted, file = "path/BayleyU2U4_HAWIKU7_age_predicted_nonlog.RData")
+
+```
+
+# mixed model selection OLD
+
+```{r model selection}
+
+# with uncorrect distribution of Prüfgröße - only valid with lme(methode = "LM")!!!
+model1_lme_lin_ML <- lme(cog ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = ~ age_0imp | D_StdNr,
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude) 
+model1_lme_lin_MLe <- lme(cog ~ age_0imp+sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = ~ age_0imp | D_StdNr, # no + sex, since sex does not time vary
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude) 
+anova(model1_lme_lin_MLe, model1_lme_lin_ML) # MLe fits better
+
+```

@@ -1,0 +1,59 @@
+---
+title: "BMI_kids"
+author: "Katharina Mattonet"
+date: "14 Januar 2021"
+output: html_document
+---
+
+# libraries
+
+```{r libraries}
+library(readxl)
+library(dplyr)
+
+```
+
+
+# load data
+
+```{r load data}
+Gewicht_Groesse_BMI_komplett_2014_03 <- read_excel("path/Gewicht_Groesse_BMI_komplett_2014-03.xlsx")
+dbo_U10_Koerperfett <- read_excel("path/dbo_U10_Koerperfett.xlsx")
+U11_PDS_Bochum_und_DU_kodiert <- read.csv2("path/U11_PDS_Bochum_und_DU_kodiert.csv")
+```
+
+# select & combine data
+
+```{r data preparation}
+
+BMI <- data.frame(subset(Gewicht_Groesse_BMI_komplett_2014_03, select = c(study_id, bmi_u6, bmi_u7, bmi_u8, bmi_u9)))
+BMI_U10 <- data.frame(subset(dbo_U10_Koerperfett, select = c(X_StdNr, U10_KF_BMI)))
+colnames(BMI_U10)[1] <- "study_id"
+
+U11_PDS_Bochum_und_DU_kodiert$bmi_u11 <- U11_PDS_Bochum_und_DU_kodiert$U11_PDS_M_12_Gewicht_kg/((U11_PDS_Bochum_und_DU_kodiert$U11_PDS_M_13_Gr_cm/100)^2)
+BMI_U11 <- data.frame(subset(U11_PDS_Bochum_und_DU_kodiert, select = c(StdNr, bmi_u11)))
+colnames(BMI_U11)[1] <- "B_StdNr"
+
+BMI <- left_join(BMI, BMI_U10, by = "study_id")
+colnames(BMI)[c(1,6)] <- c("B_StdNr", "bmi_u10")
+BMI <- left_join(BMI, BMI_U11, by = "B_StdNr")
+
+```
+
+# calculations
+```{r calculations}
+BMI$diffu11u6 <- BMI$bmi_u11 - BMI$bmi_u6
+
+hist(BMI$diffu11u6)
+boxplot(BMI$diffu11u6)
+
+```
+
+# save
+
+```{r save}
+#save(BMI, file = "path/BMI_kids.RData")
+
+```
+
+

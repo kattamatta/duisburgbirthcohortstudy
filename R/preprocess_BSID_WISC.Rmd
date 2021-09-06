@@ -1,0 +1,89 @@
+---
+title: "preprocess_BSID_HAWIK"
+author: "Katharina Mattonet"
+date: "15 März 2021"
+output: html_document
+---
+
+# load libraries
+
+```{r libraries}
+library(dplyr)
+library(readxl)
+library(lubridate)
+library(psych)
+```
+
+# load data
+
+```{r load data}
+
+U2_BSID <- read_excel("path/U2_Psycho_Bayley.xlsx")
+U4_BSID <- read_excel("path/U4_Psycho_Bayley.xlsx")
+U7_HAWIK <- read_excel("path/dbo_U7_HAWIK_IV.xlsx")
+
+EPICLaufnr_VpNr_Kodierung <- read.csv("path/EPICLaufnr_VpNr_Kodierung.csv", sep=";")
+Alter_M_K <- read.delim2("path/Alter_M_K.txt")
+U2_date <- read_excel("path/U2_Untersuchungsdatum.xlsx")
+U4_date <- read_excel("path/U4_Untersuchungsdatum.xlsx")
+
+```
+
+# prerprocess BSID U2 & U4, HAWIK
+
+```{r preprocess data}
+
+BSID <- subset(U2_BSID, select = c(StdNr, mental12, motor12))
+colnames(BSID) <- c("StdNr", "BSID_mental12", "BSID_motor12")
+
+BSID_mental12_i <- rescale(BSID$BSID_mental12, mean = 100, sd = 15, df = FALSE)
+BSID_mental12_i <- BSID_mental12_i[,1]
+BSID$BSID_mental12_i <- BSID_mental12_i
+BSID_motor12_i <- rescale(BSID$BSID_motor12, mean = 100, sd = 15, df = FALSE)
+BSID_motor12_i <- BSID_motor12_i[,1]
+BSID$BSID_motor12_i <- BSID_motor12_i
+
+BSID <- left_join(BSID, U4_BSID[, c("StdNr", "MENT24")], by = "StdNr")
+colnames(BSID)[6] <- "BSID_mental24"
+BSID <- left_join(BSID, U4_BSID[, c("StdNr", "MOTOR24")], by = "StdNr")
+colnames(BSID)[7] <- "BSID_motor24"
+BSID_mental24_i <- rescale(BSID$BSID_mental24, mean = 100, sd = 15, df = FALSE)
+BSID_mental24_i <- BSID_mental24_i[,1]
+BSID$BSID_mental24_i <- BSID_mental24_i
+BSID_motor24_i <- rescale(BSID$BSID_motor24, mean = 100, sd = 15, df = FALSE)
+BSID_motor24_i <- BSID_motor24_i[,1]
+BSID$BSID_motor24_i <- BSID_motor24_i
+
+dates_K <- subset(Alter_M_K, select = c(StdNr, Geburtsdatum_Kind))
+dates_K$birth_K <- strptime(as.character(dates_K$Geburtsdatum_Kind), "%d.%m.%y")
+dates_K$Geburtsdatum_Kind <- NULL
+dates_K <- left_join(dates_K, U2_date, by = "StdNr")
+dates_K <- left_join(dates_K, U4_date, by = "StdNr")
+
+elapsed_months <- function(end_date, start_date) {
+    ed <- as.POSIXlt(end_date)
+    sd <- as.POSIXlt(start_date)
+    12 * (ed$year - sd$year) + (ed$mon - sd$mon)
+}
+BSID$age_month_12 <- elapsed_months(dates_K$U2_Datum_Untersuchung, dates_K$birth_K)
+BSID$age_month_24 <- elapsed_months(dates_K$U4_Datum_Untersuchung, dates_K$birth_K)
+
+
+HAWIK_U7 <- subset(U7_HAWIK, select = c(X_StdNr, U7_HAWIK_Alter_Monate, U7_HAWIK_SV_Index, U7_HAWIK_WLD_Index, U7_HAWIK_AGD_Index, U7_HAWIK_VG_Index, U7_HAWIK_Gesamt_Index))
+
+colnames(HAWIK_U7) <- c("StdNr", "age_months_HAWIK", "HAWIK_VC_i", "HAWIK_PR_i", "HAWIK_WM_i", "HAWIK_PS_i", "HAWIK_IQ") # VC = verbal comprehension, PR = perceptual reasoing, WM = working memory, PS = processing seed, IQ = inteligence quotient, i = index (no general ability index available, IQ rescaled sum of points in VC, PR, WM, PS)
+
+BSID_HAWIK <- left_join(BSID, HAWIK_U7, by = "StdNr")
+colnames(BSID_HAWIK)[1] <- colnames(EPICLaufnr_VpNr_Kodierung)[2]
+BSID_HAWIK <- left_join(EPICLaufnr_VpNr_Kodierung, BSID_HAWIK, by = "VP_Nr")
+colnames(BSID_HAWIK)[1] <- "D_StdNr"
+colnames(BSID_HAWIK)[2] <- "B_StdNr"
+```
+
+# save 
+
+```{r save}
+
+#save(BSID_HAWIK, file = "path/preprocess_BayleyU2U4_HAWIKU7.RData")
+
+```

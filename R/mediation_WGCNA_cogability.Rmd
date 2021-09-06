@@ -1,0 +1,1060 @@
+---
+title: "mediation_DMR_DMP_final_pretty"
+author: "Katharina Mattonet"
+date: "9 März 2021"
+output: html_document
+---
+
+# load libraries
+
+```{r libraries}
+library(caret)
+library(dplyr)
+library(lme4)
+library(lavaan)
+library(semPlot)
+library(semTools)
+library(MASS)
+library(Hmisc)
+library(regsem)
+library(IlluminaHumanMethylationEPICanno.ilm10b2.hg19)
+```
+
+# load data
+
+```{r data}
+
+#load("path/mediation_WGCNA_IQ_image_N142_nonlog.RData")
+
+load("path/github/mVal_github.RData")
+load("path/pheno_data_N144_github.RData")
+
+load("path/celltypes_estimates_github.RData")
+
+load(file = "path/BayleyU2U4_HAWIKU7_age_predicted_nonlog.RData")
+
+eigenCpGs <- readRDS(file = "path/wagcna_eigencpgs_fsub.rds")
+
+hubCpG <- readRDS(file = "path/tophub_fsub2.rds")
+
+load("path/top_modules_f_pcdf130_round_CI.RData")
+```
+
+# subset data sex-combined
+
+```{r subset data}
+
+# sex combined
+
+## create data set to analyse
+
+pheno_data <- cbind(pheno_data, ct_estimate[,c("CD4T", "NK", "Mono", "CD8T", "Gran", "Bcell")])
+
+IQ <- data.frame(as.integer(cogDev_age_predicted$D_StdNr), cogDev_age_predicted$predict_HAWIK_IQ_mixed)
+colnames(IQ) <- c("D_StdNr", "IQ_mixed")
+pheno_data <- left_join(pheno_data, IQ, by = "D_StdNr")
+pheno_data$AMP_Plate <- factor(pheno_data$AMP_Plate, levels = c("WG6975702-MSA4", "WG6975703-MSA4"), labels = c(0,1))
+pheno_data <- pheno_data[ !(pheno_data$D_StdNr %in% c(157, 55)), ]
+pheno_data$sex_n <- as.numeric(levels(pheno_data$sex_n))[pheno_data$sex_n]
+pheno_data$PCDF130c <- scale(pheno_data$PCDF130, center = TRUE, scale = FALSE)
+
+
+mVal <- mVals_noNA_df
+mVal$`55` <- NULL
+mVal$`157` <- NULL
+
+hubCpG <- data.frame(hubCpG)
+hubCpG$module <- rownames(hubCpG)
+rownames(hubCpG) <- c(1:173)
+
+```
+
+# eigenCpG in WGCNA-modules only females
+
+```{r eigenCpG in modules}
+
+eigenCpGs_df <- data.frame(eigenCpGs[["eigengenes"]])
+eigenCpGs_sigmodule_f <- eigenCpGs_df[,((colnames(eigenCpGs_df)) %in% top_modules_f_pcdf130_round$modules)]
+
+sigGO_modules_f <- c("MEbrown", "MElightcyan1", "MEred", "MEsalmon", "MEwhite", "MEyellow")
+eigenCpGs_sigGO_f <- eigenCpGs_df[,((colnames(eigenCpGs_df)) %in% sigGO_modules_f)]
+eigenCpGs_sigGO_f$D_StdNr <- as.integer(rownames(eigenCpGs_sigGO_f))
+
+pheno_data_f <- pheno_data[pheno_data$sex_n == 0,]
+
+pheno_data_f <- left_join(pheno_data_f, eigenCpGs_sigGO_f, by = "D_StdNr")
+
+```
+
+# hubGpG of WGCNA-modules
+
+```{r hubCpG}
+sigGO_modules_fm <- gsub(".*ME","", sigGO_modules_f)
+
+hubCpG_sigGO <- hubCpG[(hubCpG$module %in% sigGO_modules_fm), ]
+
+#hubCpG_M <- mVal[hubCpG_sigGO$hubCpG,]
+#hubCpG_M_wrong <- hubCpG_M
+hubCpG_M <- mVal[rownames(mVal) %in% hubCpG_sigGO$hubCpG,]
+
+hubCpG_M_t <- data.frame(t(hubCpG_M))
+pheno_data <- cbind(pheno_data, hubCpG_M_t)
+```
+
+# set seed for replication
+
+```{r seed}
+
+set.seed(123)
+
+```
+
+# check data for normal distribution eigenCpG - females only
+
+```{r check data eigenCpG}
+var(pheno_data_f$IQ_mixed, na.rm = TRUE) #  8.921538, use IQ_mixed as outcome in main models
+length(which(is.na(pheno_data_f$IQ_mixed))) # non
+
+skew(pheno_data_f$IQ_mixed)
+kurtosis(pheno_data_f$IQ_mixed)
+skew(pheno_data_f$PCDF130c)
+kurtosis(pheno_data_f$PCDF130c)
+# not normal distributed data
+
+# covariate preselection
+corrmatrixY_pcdf130_f <- as.matrix(subset(pheno_data_f, select = c(IQ_mixed, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m)))
+rcorr(corrmatrixY_pcdf130_f)$P[, "IQ_mixed"] # p < .05 including in following mediation model
+
+## crate APA-table of correlation matrix
+### function
+corstarsl <- function(x){
+require(Hmisc)
+x <- as.matrix(x)
+R <- rcorr(x)$r
+p <- rcorr(x)$P
+p <- round(p, digits = 2)
+
+## define notions for significance levels; spacing is important.
+mystars <- ifelse(p < .01, "**", ifelse(p < .05, "*", " "))
+
+## trunctuate the matrix that holds the correlations to two decimal
+R <- format(round(cbind(rep(-1.11, ncol(x)), R), 2))[,-1]
+
+## build a new matrix that includes the correlations with their apropriate stars
+Rnew <- matrix(paste(R, mystars, sep=""), ncol=ncol(x))
+diag(Rnew) <- paste(diag(R), " ", sep="")
+rownames(Rnew) <- colnames(x)
+colnames(Rnew) <- paste(colnames(x), "", sep="")
+
+## remove upper triangle
+Rnew <- as.matrix(Rnew)
+Rnew[upper.tri(Rnew, diag = TRUE)] <- ""
+Rnew <- as.data.frame(Rnew)
+
+## remove last column and return the matrix (which is now a data frame)
+Rnew <- cbind(Rnew[1:length(Rnew)-1])
+return(Rnew)
+} 
+
+corrtable <- as.data.frame(corstarsl(corrmatrixY_pcdf130_f)[2:7,1])
+colnames(corrtable) <- "child´s cognitive ability\n (N=73)"
+rownames(corrtable) <- c("mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy")
+corrtable
+
+#write.csv2(corrtable, file = "path/mediation_WGCNA_corrtable_covvarIQnonlog_f_N73.csv")
+
+```
+
+# PCDF130 eigenCpG of sig module brown in females only
+ 
+```{r medmodel pcdf130 female eigenCpG brown}
+
+corrmatrixM_pcdf130_brown_f <- as.matrix(subset(pheno_data_f, select = c(MEbrown, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_brown_f)$P[, "MEbrown"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_brown_f <- as.data.frame(corstarsl(corrmatrixM_pcdf130_brown_f)[2:14,1])
+colnames(corrtable_pcdf130_brown_f) <- "eigenCpG (brown module)"
+rownames(corrtable_pcdf130_brown_f) <- c("mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+
+skew(pheno_data_f$MEbrown)
+kurtosis(pheno_data_f$MEbrown)
+
+model_pcdf130_brown_feeee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEbrown + dur_gest + BMI_m + Bcell + AMP_Plate
+          MEbrown ~ a*PCDF130 + dur_gest + BMI_m + Bcell + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_brown_f.fit.YBeeee <- sem(model_pcdf130_brown_feeee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_brown_f.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_brown_feee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEbrown + BMI_m + Bcell + AMP_Plate
+          MEbrown ~ a*PCDF130 + BMI_m + Bcell + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_brown_f.fit.YBeee <- sem(model_pcdf130_brown_feee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_brown_f.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_brown_fee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEbrown + Bcell + AMP_Plate
+          MEbrown ~ a*PCDF130 + Bcell + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_brown_f.fit.YBee <- sem(model_pcdf130_brown_fee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_brown_f.fit.YBee, fit = TRUE, rsquar = TRUE)
+
+# final model 
+model_pcdf130_brown_f <- '
+          IQ_mixed ~ c*PCDF130 + b*MEbrown + BMI_m + Bcell + AMP_Plate
+          MEbrown ~ a*PCDF130 + BMI_m + Bcell + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_brown_f.fit.YB <- sem(model_pcdf130_brown_f, data = pheno_data_f, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_brown_f.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_brown_f.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 eigenCpG of sig module lightcyan1 in females only
+ 
+```{r medmodel pcdf130 female eigenCpG lightcyan1}
+
+corrmatrixM_pcdf130_lightcyan1_f <- as.matrix(subset(pheno_data_f, select = c(MElightcyan1, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_lightcyan1_f)$P[, "MElightcyan1"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_lightcyan1_f <- as.data.frame(corstarsl(corrmatrixM_pcdf130_lightcyan1_f)[2:14,1])
+colnames(corrtable_pcdf130_lightcyan1_f) <- "eigenCpG (lightcyan1 module)"
+rownames(corrtable_pcdf130_lightcyan1_f) <- c("mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvareigenCpG <- cbind(corrtable_pcdf130_brown_f, corrtable_pcdf130_lightcyan1_f)
+
+skew(pheno_data_f$MElightcyan1)
+kurtosis(pheno_data_f$MElightcyan1)
+
+#model selection
+model_pcdf130_lightcyan1_feeeee <- '
+          IQ_mixed ~ c*PCDF130 + b*MElightcyan1 + BMI_m + dur_gest + CD4T + Gran + Bcell
+          MElightcyan1 ~ a*PCDF130 + BMI_m + dur_gest + CD4T + Gran + Bcell
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_lightcyan1_f.fit.YBeeeee <- sem(model_pcdf130_lightcyan1_feeeee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_lightcyan1_f.fit.YBeeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_lightcyan1_feeee <- '
+          IQ_mixed ~ c*PCDF130 + b*MElightcyan1 + BMI_m + dur_gest + CD4T + Gran
+          MElightcyan1 ~ a*PCDF130 + BMI_m + dur_gest + CD4T + Gran
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_lightcyan1_f.fit.YBeeee <- sem(model_pcdf130_lightcyan1_feeee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_lightcyan1_f.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_lightcyan1_feee <- '
+          IQ_mixed ~ c*PCDF130 + b*MElightcyan1 + BMI_m + dur_gest + CD4T
+          MElightcyan1 ~ a*PCDF130 + BMI_m + dur_gest + CD4T
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_lightcyan1_f.fit.YBeee <- sem(model_pcdf130_lightcyan1_feee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_lightcyan1_f.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_lightcyan1_fee <- '
+          IQ_mixed ~ c*PCDF130 + b*MElightcyan1 + BMI_m + CD4T
+          MElightcyan1 ~ a*PCDF130 + BMI_m + CD4T
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_lightcyan1_f.fit.YBee <- sem(model_pcdf130_lightcyan1_fee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_lightcyan1_f.fit.YBee, fit = TRUE, rsquar = TRUE)
+
+
+# final model 
+model_pcdf130_lightcyan1_f <- '
+          IQ_mixed ~ c*PCDF130 + b*MElightcyan1 + CD4T
+          MElightcyan1 ~ a*PCDF130 + CD4T
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_lightcyan1_f.fit.YB <- sem(model_pcdf130_lightcyan1_f, data = pheno_data_f, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_lightcyan1_f.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_lightcyan1_f.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 eigenCpG of sig module red in females only
+
+```{r medmodel pcdf130 female eigenCpG red}
+
+corrmatrixM_pcdf130_red_f <- as.matrix(subset(pheno_data_f, select = c(MEred, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_red_f)$P[, "MEred"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_red_f <- as.data.frame(corstarsl(corrmatrixM_pcdf130_red_f)[2:14,1])
+colnames(corrtable_pcdf130_red_f) <- "eigenCpG (red module)"
+rownames(corrtable_pcdf130_red_f) <- c("mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvareigenCpG <- cbind(corrtable_covvareigenCpG, corrtable_pcdf130_red_f)
+
+skew(pheno_data_f$MEred)
+kurtosis(pheno_data_f$MEred)
+
+# model selection
+model_pcdf130_red_feee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEred + dur_gest + BMI_m + AMP_Plate
+          MEred ~ a*PCDF130 + BMI_m + dur_gest + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_red_f.fit.YBeee <- sem(model_pcdf130_red_feee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_red_f.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_red_fee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEred + BMI_m + AMP_Plate
+          MEred ~ a*PCDF130 + BMI_m + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_red_f.fit.YBee <- sem(model_pcdf130_red_fee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_red_f.fit.YBee, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_red_f <- '
+          IQ_mixed ~ c*PCDF130 + b*MEred + BMI_m + AMP_Plate
+          MEred ~ a*PCDF130 + BMI_m + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_red_f.fit.YB <- sem(model_pcdf130_red_f, data = pheno_data_f, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_red_f.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_red_f.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 eigenCpG of sig module salmon in females only
+
+```{r medmodel pcdf130 female eigenCpG salmon}
+
+corrmatrixM_pcdf130_salmon_f <- as.matrix(subset(pheno_data_f, select = c(MEsalmon, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_salmon_f)$P[, "MEsalmon"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_salmon_f <- as.data.frame(corstarsl(corrmatrixM_pcdf130_salmon_f)[2:14,1])
+colnames(corrtable_pcdf130_salmon_f) <- "eigenCpG (salmon module)"
+rownames(corrtable_pcdf130_salmon_f) <- c("mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvareigenCpG <- cbind(corrtable_covvareigenCpG, corrtable_pcdf130_salmon_f)
+
+skew(pheno_data_f$MEsalmon)
+kurtosis(pheno_data_f$MEsalmon)
+
+# model selection
+model_pcdf130_salmon_feee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEsalmon + dur_gest + BMI_m + AMP_Plate
+          MEsalmon ~ a*PCDF130 + dur_gest + BMI_m + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_salmon_f.fit.YBeee <- sem(model_pcdf130_salmon_feee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_salmon_f.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_salmon_fee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEsalmon + BMI_m + AMP_Plate
+          MEsalmon ~ a*PCDF130 + BMI_m + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_salmon_f.fit.YBee <- sem(model_pcdf130_salmon_fee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_salmon_f.fit.YBee, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_salmon_f <- '
+          IQ_mixed ~ c*PCDF130 + b*MEsalmon + BMI_m + AMP_Plate
+          MEsalmon ~ a*PCDF130 + BMI_m + AMP_Plate
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_salmon_f.fit.YB <- sem(model_pcdf130_salmon_f, data = pheno_data_f, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_salmon_f.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_salmon_f.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 eigenCpG of sig module white in females only
+
+```{r medmodel pcdf130 female eigenCpG white}
+
+corrmatrixM_pcdf130_white_f <- as.matrix(subset(pheno_data_f, select = c(MEwhite, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_white_f)$P[, "MEwhite"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_white_f <- as.data.frame(corstarsl(corrmatrixM_pcdf130_white_f)[2:14,1])
+colnames(corrtable_pcdf130_white_f) <- "eigenCpG (white module)"
+rownames(corrtable_pcdf130_white_f) <- c("mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvareigenCpG <- cbind(corrtable_covvareigenCpG, corrtable_pcdf130_white_f)
+
+
+skew(pheno_data_f$MEwhite)
+kurtosis(pheno_data_f$MEwhite)
+
+# model selection
+model_pcdf130_white_feeeee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEwhite + BMI_m + dur_gest + CD4T + Gran + Bcell
+          MEwhite ~ a*PCDF130 + BMI_m + dur_gest + CD4T + Gran + Bcell
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_white_f.fit.YBeeeee <- sem(model_pcdf130_white_feeeee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_white_f.fit.YBeeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_white_feeee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEwhite + BMI_m + dur_gest + Gran + Bcell
+          MEwhite ~ a*PCDF130 + BMI_m + dur_gest + Gran + Bcell
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_white_f.fit.YBeeee <- sem(model_pcdf130_white_feeee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_white_f.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_white_feee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEwhite + BMI_m + dur_gest + Bcell
+          MEwhite ~ a*PCDF130 + BMI_m + dur_gest + Bcell
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_white_f.fit.Yeee <- sem(model_pcdf130_white_feee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_white_f.fit.Yeee, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_white_f <- '
+          IQ_mixed ~ c*PCDF130 + b*MEwhite + dur_gest + Bcell
+          MEwhite ~ a*PCDF130 + dur_gest + Bcell
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_white_f.fit.YB <- sem(model_pcdf130_white_f, data = pheno_data_f, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_white_f.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_white_f.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 eigenCpG of sig module yellow in females only
+
+```{r medmodel pcdf130 female eigenCpG yellow}
+
+corrmatrixM_pcdf130_yellow_f <- as.matrix(subset(pheno_data_f, select = c(MEyellow, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_yellow_f)$P[, "MEyellow"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_yellow_f <- as.data.frame(corstarsl(corrmatrixM_pcdf130_yellow_f)[2:14,1])
+colnames(corrtable_pcdf130_yellow_f) <- "eigenCpG (yellow module)"
+rownames(corrtable_pcdf130_yellow_f) <- c("mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvareigenCpG <- cbind(corrtable_covvareigenCpG, corrtable_pcdf130_yellow_f)
+
+#write.csv2(corrtable_covvareigenCpG, file = "path/mediation_WGCNA_corrtable_covvareigenCpG_f_N73.csv")
+
+skew(pheno_data_f$MEyellow)
+kurtosis(pheno_data_f$MEyellow)
+
+# model selection
+model_pcdf130_yellow_feee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEyellow + dur_gest + BMI_m + Bcell
+          MEyellow ~ a*PCDF130 + dur_gest + BMI_m + Bcell
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_yellow_f.fit.YBeee <- sem(model_pcdf130_yellow_feee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_yellow_f.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_yellow_fee <- '
+          IQ_mixed ~ c*PCDF130 + b*MEyellow + BMI_m + Bcell
+          MEyellow ~ a*PCDF130 + BMI_m + Bcell
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_yellow_f.fit.YBee <- sem(model_pcdf130_yellow_fee, data = pheno_data_f, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_yellow_f.fit.YBee, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_yellow_f <- '
+          IQ_mixed ~ c*PCDF130 + b*MEyellow + Bcell
+          MEyellow ~ a*PCDF130 + Bcell
+		      indirect := a*b
+		      total := c + indirect' 
+model_pcdf130_yellow_f.fit.YB <- sem(model_pcdf130_yellow_f, data = pheno_data_f, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_yellow_f.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_yellow_f.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# check data for normal distribution hubCpG - both sexes 
+
+```{r check data hubCpG}
+var(pheno_data$IQ_mixed, na.rm = TRUE) #  12.68551, use IQ_mixed as outcome in main models
+length(which(is.na(pheno_data$IQ_mixed))) # yes N = 2 
+
+skew(pheno_data$IQ_mixed)
+kurtosis(pheno_data$IQ_mixed)
+skew(pheno_data$PCDF130c)
+kurtosis(pheno_data$PCDF130c)
+
+# covariate preselection
+corrmatrixY_pcdf130 <- as.matrix(subset(pheno_data, select = c(IQ_mixed, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m)))
+rcorr(corrmatrixY_pcdf130)$P[, "IQ_mixed"] # p < .05 including in following mediation model
+
+corrtable_all <- as.data.frame(corstarsl(corrmatrixY_pcdf130)[2:8,1])
+colnames(corrtable_all) <- "child´s cognitive ability\n (N=142)"
+rownames(corrtable_all) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy")
+
+#write.csv2(corrtable_all, file = "path/mediation_WGCNA_corrtable_covvarIQnonlog_all_N142.csv")
+
+```
+
+# PCDF130 hubCpG of sig modules brown
+
+```{r medmodel hubCpG brown}
+
+corrmatrixM_pcdf130_cg09899564 <- as.matrix(subset(pheno_data, select = c(cg09899564, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_cg09899564)$P[, "cg09899564"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_brown_hubCpG <- as.data.frame(corstarsl(corrmatrixM_pcdf130_cg09899564)[2:15,1])
+colnames(corrtable_pcdf130_brown_hubCpG) <- "hubCpG (brown module)"
+rownames(corrtable_pcdf130_brown_hubCpG) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+
+skew(pheno_data$cg09899564)
+kurtosis(pheno_data$cg09899564)
+
+model_pcdf130_cg09899564eeeeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09899564 + dur_gest + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell
+          cg09899564 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + dur_gest + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1
+          ' 
+model_pcdf130_cg09899564.fit.YBeeeeee <- sem(model_pcdf130_cg09899564eeeeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09899564.fit.YBeeeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg09899564eeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09899564 + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell
+          cg09899564 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1
+          ' 
+model_pcdf130_cg09899564.fit.YBeeee <- sem(model_pcdf130_cg09899564eeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09899564.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_cg09899564 <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09899564 + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell
+          cg09899564 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1
+          ' 
+model_pcdf130_cg09899564.fit.YB <- sem(model_pcdf130_cg09899564, data = pheno_data, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09899564.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_cg09899564.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 hubCpG of sig modules lightcyan1
+
+```{r medmodel hubCpG lightcyan1}
+
+# covariate preselection
+
+corrmatrixM_pcdf130_cg11468953 <- as.matrix(subset(pheno_data, select = c(cg11468953, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_cg11468953)$P[, "cg11468953"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_lightcyan1_hubCpG <- as.data.frame(corstarsl(corrmatrixM_pcdf130_cg11468953)[2:15,1])
+colnames(corrtable_pcdf130_lightcyan1_hubCpG) <- "hubCpG (lightcyan1 module)"
+rownames(corrtable_pcdf130_lightcyan1_hubCpG) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvarhubCpG <- cbind(corrtable_pcdf130_brown_hubCpG, corrtable_pcdf130_lightcyan1_hubCpG)
+
+skew(pheno_data$cg11468953)
+kurtosis(pheno_data$cg11468953)
+
+# model selection
+model_pcdf130_cg11468953eeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg11468953 + dur_gest + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell
+          cg11468953 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + dur_gest + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg11468953.fit.YBeeee <- sem(model_pcdf130_cg11468953eeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg11468953.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg11468953eee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg11468953 + weight_n + BMI_m + CD4T + Mono + NK + Bcell
+          cg11468953 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Mono + NK + Bcell
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg11468953.fit.YBeee <- sem(model_pcdf130_cg11468953eee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg11468953.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg11468953ee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg11468953 + weight_n + BMI_m + CD4T + Mono + Bcell
+          cg11468953 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Mono + Bcell
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg11468953.fit.YBee <- sem(model_pcdf130_cg11468953ee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg11468953.fit.YBee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg11468953e <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg11468953 + weight_n + BMI_m + CD4T + Bcell
+          cg11468953 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Bcell
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg11468953.fit.YBe <- sem(model_pcdf130_cg11468953e, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg11468953.fit.YBe, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_cg11468953 <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg11468953 + weight_n + BMI_m + CD4T + Bcell
+          cg11468953 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Bcell
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg11468953.fit.YB <- sem(model_pcdf130_cg11468953, data = pheno_data, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg11468953.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_cg11468953.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 hubCpG of sig modules red
+
+```{r medmodel hubCpG red}
+
+# covariate preselection
+
+corrmatrixM_pcdf130_cg18901378 <- as.matrix(subset(pheno_data, select = c(cg18901378, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_cg18901378)$P[, "cg18901378"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_red_hubCpG <- as.data.frame(corstarsl(corrmatrixM_pcdf130_cg18901378)[2:15,1])
+colnames(corrtable_pcdf130_red_hubCpG) <- "hubCpG (red module)"
+rownames(corrtable_pcdf130_red_hubCpG) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvarhubCpG <- cbind(corrtable_covvarhubCpG, corrtable_pcdf130_red_hubCpG)
+
+skew(pheno_data$cg18901378)
+kurtosis(pheno_data$cg18901378)
+
+# model selection
+model_pcdf130_cg18901378eeeeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg18901378 + dur_gest + weight_n + BMI_m + age_m + AMP_Plate
+          cg18901378 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + dur_gest + weight_n + BMI_m + age_m + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg18901378.fit.YBeeeeee <- sem(model_pcdf130_cg18901378eeeeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg18901378.fit.YBeeeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg18901378eeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg18901378 + weight_n + BMI_m + age_m + AMP_Plate
+          cg18901378 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + age_m + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg18901378.fit.YBeeee <- sem(model_pcdf130_cg18901378eeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg18901378.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg18901378eee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg18901378 + weight_n + BMI_m + AMP_Plate
+          cg18901378 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg18901378.fit.YBeee <- sem(model_pcdf130_cg18901378eee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg18901378.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_cg18901378 <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg18901378 + weight_n + BMI_m + AMP_Plate
+          cg18901378 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg18901378.fit.YB <- sem(model_pcdf130_cg18901378, data = pheno_data, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg18901378.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_cg18901378.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 hubCpG of sig modules salmon
+
+
+```{r medmodel hubCpG salmon}
+
+# covariate preselection
+
+corrmatrixM_pcdf130_cg01733928 <- as.matrix(subset(pheno_data, select = c(cg01733928, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_cg01733928)$P[, "cg01733928"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_salmon_hubCpG <- as.data.frame(corstarsl(corrmatrixM_pcdf130_cg01733928)[2:15,1])
+colnames(corrtable_pcdf130_salmon_hubCpG) <- "hubCpG (salmon module)"
+rownames(corrtable_pcdf130_salmon_hubCpG) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvarhubCpG <- cbind(corrtable_covvarhubCpG, corrtable_pcdf130_salmon_hubCpG)
+
+
+skew(pheno_data$cg01733928)
+kurtosis(pheno_data$cg01733928)
+
+# model selection
+model_pcdf130_cg01733928eeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg01733928 + dur_gest + weight_n + BMI_m + age_m + Bcell + AMP_Plate
+          cg01733928 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + dur_gest + weight_n + BMI_m + age_m + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg01733928.fit.YBeeee <- sem(model_pcdf130_cg01733928eeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg01733928.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg01733928eee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg01733928 + weight_n + BMI_m + age_m + Bcell + AMP_Plate
+          cg01733928 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + age_m + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg01733928.fit.YBeee <- sem(model_pcdf130_cg01733928eee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg01733928.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_cg01733928 <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg01733928 + weight_n + BMI_m + age_m + Bcell + AMP_Plate
+          cg01733928 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + age_m + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg01733928.fit.YB <- sem(model_pcdf130_cg01733928, data = pheno_data, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg01733928.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_cg01733928.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 hubCpG of sig modules white
+
+
+```{r medmodel hubCpG white}
+
+# covariate preselection
+
+corrmatrixM_pcdf130_cg10482044 <- as.matrix(subset(pheno_data, select = c(cg10482044
+, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_cg10482044)$P[, "cg10482044"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_white_hubCpG <- as.data.frame(corstarsl(corrmatrixM_pcdf130_cg10482044)[2:15,1])
+colnames(corrtable_pcdf130_white_hubCpG) <- "hubCpG (white module)"
+rownames(corrtable_pcdf130_white_hubCpG) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvarhubCpG <- cbind(corrtable_covvarhubCpG, corrtable_pcdf130_white_hubCpG)
+
+skew(pheno_data$cg10482044)
+kurtosis(pheno_data$cg10482044)
+
+# model selection
+model_pcdf130_cg10482044eeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg10482044 + dur_gest + weight_n + BMI_m + highEduc_m_r + CD4T + NK + Gran + Bcell + AMP_Plate
+          cg10482044 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + dur_gest + weight_n + BMI_m + highEduc_m_r + CD4T + NK + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg10482044.fit.YBeeee <- sem(model_pcdf130_cg10482044eeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg10482044.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg10482044eee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg10482044 + weight_n + BMI_m + highEduc_m_r + CD4T + NK + Gran + Bcell + AMP_Plate
+          cg10482044 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + highEduc_m_r + CD4T + NK + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg10482044.fit.YBeee <- sem(model_pcdf130_cg10482044eee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg10482044.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg10482044ee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg10482044 + weight_n + BMI_m + CD4T + NK + Gran + Bcell + AMP_Plate
+          cg10482044 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + NK + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg10482044.fit.YBee <- sem(model_pcdf130_cg10482044ee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg10482044.fit.YBee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg10482044_e <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg10482044 + weight_n + BMI_m + CD4T + Bcell + AMP_Plate
+          cg10482044 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg10482044.fit.YB_e <- sem(model_pcdf130_cg10482044_e, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg10482044.fit.YB_e, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_cg10482044 <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg10482044 + weight_n + BMI_m + CD4T + Bcell + AMP_Plate
+          cg10482044 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1'
+model_pcdf130_cg10482044.fit.YB <- sem(model_pcdf130_cg10482044, data = pheno_data, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg10482044.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_cg10482044.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# PCDF130 hubCpG of sig modules yellow
+
+
+```{r medmodel hubCpG yellow}
+
+# covariate preselection
+
+corrmatrixM_pcdf130_cg09941484 <- as.matrix(subset(pheno_data, select = c(cg09941484
+, sex_n, age_m, dur_gest, smoke_m_r, weight_n, highEduc_m_r, BMI_m, CD4T, CD8T, Mono, NK, Gran, Bcell, AMP_Plate)))
+rcorr(corrmatrixM_pcdf130_cg09941484)$P[, "cg09941484"] # p < .05 including in following mediation model
+
+corrtable_pcdf130_yellow_hubCpG <- as.data.frame(corstarsl(corrmatrixM_pcdf130_cg09941484)[2:15,1])
+colnames(corrtable_pcdf130_yellow_hubCpG) <- "hubCpG (yellow module)"
+rownames(corrtable_pcdf130_yellow_hubCpG) <- c("neonate´s sex", "mother´s age at birth", "gestational length", "mother´s smoking status during pregnancy", "neonate´s birth weight", "mother´s education level", "mother´s BMI before pregnancy", "CD4T fraction", "CD8T fraction", "monocyte fraction", "NK fraction", "granulocyte fraction", "Bcell fraction", "EPIC assay plate")
+corrtable_covvarhubCpG <- cbind(corrtable_covvarhubCpG, corrtable_pcdf130_yellow_hubCpG)
+
+#write.csv2(corrtable_covvarhubCpG, file = "path/mediation_WGCNA_corrtable_covvarhubCpG_all_N142.csv")
+
+skew(pheno_data$cg09941484)
+kurtosis(pheno_data$cg09941484)
+
+#model selection
+model_pcdf130_cg09941484eeeeeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09941484 + dur_gest + weight_n + BMI_m + smoke_m_r + CD4T + Mono + NK + Gran + Bcell + AMP_Plate
+          cg09941484 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + dur_gest + weight_n + BMI_m + smoke_m_r + CD4T + Mono + NK + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg09941484.fit.YBeeeeeee <- sem(model_pcdf130_cg09941484eeeeeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09941484.fit.YBeeeeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg09941484eeeeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09941484 + weight_n + BMI_m + smoke_m_r + CD4T + Mono + NK + Gran + Bcell + AMP_Plate
+          cg09941484 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + smoke_m_r + CD4T + Mono + NK + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg09941484.fit.YBeeeeee <- sem(model_pcdf130_cg09941484eeeeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09941484.fit.YBeeeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg09941484eeeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09941484 + weight_n + BMI_m + CD4T + Mono + NK + Gran + Bcell + AMP_Plate
+          cg09941484 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m +  CD4T + Mono + NK + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg09941484.fit.YBeeeee <- sem(model_pcdf130_cg09941484eeeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09941484.fit.YBeeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg09941484eeee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09941484 + weight_n + BMI_m + CD4T + NK + Gran + Bcell + AMP_Plate
+          cg09941484 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + NK + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg09941484.fit.YBeeee <- sem(model_pcdf130_cg09941484eeee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09941484.fit.YBeeee, fit = TRUE, rsquar = TRUE)
+
+model_pcdf130_cg09941484eee <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09941484 + weight_n + BMI_m + CD4T + Gran + Bcell + AMP_Plate
+          cg09941484 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg09941484.fit.YBeee <- sem(model_pcdf130_cg09941484eee, data = pheno_data, se = "bootstrap", test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09941484.fit.YBeee, fit = TRUE, rsquar = TRUE)
+
+# final model
+model_pcdf130_cg09941484 <- '
+          IQ_mixed ~ c*PCDF130c + sex_n + cw*PCDF130c:sex_n + b*cg09941484 + weight_n + BMI_m + CD4T + Gran + Bcell + AMP_Plate
+          cg09941484 ~ a*PCDF130c + sex_n + aw*PCDF130c:sex_n + weight_n + BMI_m + CD4T + Gran + Bcell + AMP_Plate
+		      indirect0 := a*b # + 0*aw*b
+		      total0 := c + indirect0 # + 0*cw
+          indirect1 := indirect0 + 1*aw*b
+          total1 := c + indirect1 + 1*cw
+          diffind := indirect0 - indirect1
+          difftotal := total0 - total1' 
+model_pcdf130_cg09941484.fit.YB <- sem(model_pcdf130_cg09941484, data = pheno_data, se = "bootstrap", bootstrap = 10000, test = "yuan.bentler", missing = "fiml.x")
+summary(model_pcdf130_cg09941484.fit.YB, fit = TRUE, rsquar = TRUE)
+parameterEstimates(model_pcdf130_cg09941484.fit.YB, ci = T, boot.ci.type = "bca.simple")
+
+```
+
+# export results to tables (& figures)
+
+```{r export results}
+
+l_pcdf130_brown_f <- parameterEstimates(model_pcdf130_brown_f.fit.YB)[c(1:9, 13:15, 17:18, 20), ]
+l_pcdf130_brown_f
+b_pcdf130_brown_f <- gettextf('%s %.2f p=%.2f', l_pcdf130_brown_f$label, l_pcdf130_brown_f$est, digits = l_pcdf130_brown_f$pvalue)
+b_pcdf130_brown_f <- gsub(".*p=NA.*", "", b_pcdf130_brown_f)
+b_pcdf130_brown_f <- gsub("w", "*sex", b_pcdf130_brown_f)
+b_pcdf130_brown_f
+semPaths(model_pcdf130_brown_f.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_brown_f.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_brown_f, label.prop = 1,  edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "EigenCpG\nbrown", "PCDF130", "mother´s\nBMI\nbefore\npregnancy", "B-cells", "EPIC\narray\nplate"), edge.label.position = .7, edge.width = .6, node.width = 1.5, curve = 2)
+
+l_pcdf130_lightcyan1_f <- parameterEstimates(model_pcdf130_lightcyan1_f.fit.YB)[c(1:10), ]
+l_pcdf130_lightcyan1_f
+b_pcdf130_lightcyan1_f <- gettextf('%s %.2f\np=%.2f', l_pcdf130_lightcyan1_f$label, l_pcdf130_lightcyan1_f$est, digits = l_pcdf130_lightcyan1_f$pvalue)
+b_pcdf130_lightcyan1_f <- gsub("\np=NA", "", b_pcdf130_lightcyan1_f)
+b_pcdf130_lightcyan1_f <- gsub("w", "*sex", b_pcdf130_lightcyan1_f)
+b_pcdf130_lightcyan1_f
+semPaths(model_pcdf130_lightcyan1_f.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_lightcyan1_f.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_lightcyan1_f, label.prop = 1,  edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "EigenCpG\nlightcyan1", "PCDF130", "CD4T"), edge.label.position = .7, edge.width = .6, node.width = 1.5, curve = 2)
+
+l_pcdf130_red_f <- parameterEstimates(model_pcdf130_red_f.fit.YB)[c(1:7, 11:12, 14), ]
+l_pcdf130_red_f
+b_pcdf130_red_f <- gettextf('%s %.2f\np=%.2f', l_pcdf130_red_f$label, l_pcdf130_red_f$est, digits = l_pcdf130_red_f$pvalue)
+b_pcdf130_red_f <- gsub(".*p=NA.*", "", b_pcdf130_red_f)
+b_pcdf130_red_f <- gsub("w", "*sex", b_pcdf130_red_f)
+b_pcdf130_red_f
+semPaths(model_pcdf130_red_f.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_red_f.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_red_f, label.prop = 1,  edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "EigenCpG\nred", "PCDF130", "mother´s\nBMI\nbefore\npregnancy", "EPIC\narray\nplate"), edge.label.position = .7, edge.width = .6, node.width = 1.5, curve = 2)
+
+l_pcdf130_salmon_f <- parameterEstimates(model_pcdf130_salmon_f.fit.YB)[c(1:7, 11:12, 14), ]
+l_pcdf130_salmon_f
+b_pcdf130_salmon_f <- gettextf('%s %.2f\np=%.2f', l_pcdf130_salmon_f$label, l_pcdf130_salmon_f$est, digits = l_pcdf130_salmon_f$pvalue)
+b_pcdf130_salmon_f <- gsub(".*p=NA.*", "", b_pcdf130_salmon_f)
+b_pcdf130_salmon_f <- gsub("w", "*sex", b_pcdf130_salmon_f)
+b_pcdf130_salmon_f
+semPaths(model_pcdf130_salmon_f.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_salmon_f.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_salmon_f, label.prop = 1,  edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "EigenCpG\nsalmon", "PCDF130", "mother´s\nBMI\nbefore\npregnancy", "EPIC\narray\nplate"), edge.label.position = .7, edge.width = .6, node.width = 1.5, curve = 2)
+
+l_pcdf130_white_f <- parameterEstimates(model_pcdf130_white_f.fit.YB)[c(1:7, 11:12, 14), ]
+l_pcdf130_white_f
+b_pcdf130_white_f <- gettextf('%s %.2f\np=%.2f', l_pcdf130_white_f$label, l_pcdf130_white_f$est, digits = l_pcdf130_white_f$pvalue)
+b_pcdf130_white_f <- gsub(".*p=NA.*", "", b_pcdf130_white_f)
+b_pcdf130_white_f <- gsub("w", "*sex", b_pcdf130_white_f)
+b_pcdf130_white_f
+semPaths(model_pcdf130_white_f.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_white_f.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_white_f, label.prop = 1,  edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "EigenCpG\nwhite", "PCDF130", "gestational\nlength", "B-cells"), edge.label.position = .7, edge.width = .6, node.width = 1.5, curve = 2)
+
+l_pcdf130_yellow_f <- parameterEstimates(model_pcdf130_yellow_f.fit.YB)[c(1:10), ]
+l_pcdf130_yellow_f
+b_pcdf130_yellow_f <- gettextf('%s %.2f\np=%.2f', l_pcdf130_yellow_f$label, l_pcdf130_yellow_f$est, digits = l_pcdf130_yellow_f$pvalue)
+b_pcdf130_yellow_f <- gsub("\np=NA", "", b_pcdf130_yellow_f)
+b_pcdf130_yellow_f <- gsub("w", "*sex", b_pcdf130_yellow_f)
+b_pcdf130_yellow_f
+semPaths(model_pcdf130_yellow_f.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_yellow_f.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_yellow_f, label.prop = 1,  edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "EigenCpG\nyellow", "PCDF130", "B-cells"), edge.label.position = .7, edge.width = .6, node.width = 1.5, curve = 2)
+
+l_pcdf130_brown <- parameterEstimates(model_pcdf130_cg09899564.fit.YB)[c(1:21, 25:33, 35:42, 44:50, 52:57, 59:63, 65:68, 70:72, 74:75, 77), ]
+l_pcdf130_brown
+b_pcdf130_brown <- gettextf('%s %.2f p=%.2f', l_pcdf130_brown$label, l_pcdf130_brown$est, digits = l_pcdf130_brown$pvalue)
+b_pcdf130_brown <- gsub(".*p=NA.*", "", b_pcdf130_brown)
+b_pcdf130_brown <- gsub("w", "*sex", b_pcdf130_brown)
+b_pcdf130_brown
+semPaths(model_pcdf130_cg09899564.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_cg09899564.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_brown, edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "hubCpG\nbrown", "PCDF130", "child´s\nsex", "PCDF130*\nchild´s sex", "birthweight", "mother´s\nBMI\nbefore\npregnancy", "CD4T", "monocytes", "NK", "granulocytes", "B-cells"), edge.label.position = .6, edge.width = .6, node.width = 1.7, curve = 2)
+
+l_pcdf130_lightcyan1 <- parameterEstimates(model_pcdf130_cg11468953.fit.YB)[c(1:15, 19:24, 26:30, 32:35,  37:39, 41:42, 44), ]
+l_pcdf130_lightcyan1
+b_pcdf130_lightcyan1 <- gettextf('%s %.2f p=%.2f', l_pcdf130_lightcyan1$label, l_pcdf130_lightcyan1$est, digits = l_pcdf130_lightcyan1$pvalue)
+b_pcdf130_lightcyan1 <- gsub(".*p=NA.*", "", b_pcdf130_lightcyan1)
+b_pcdf130_lightcyan1 <- gsub("w", "*sex", b_pcdf130_lightcyan1)
+b_pcdf130_lightcyan1
+semPaths(model_pcdf130_cg11468953.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_cg11468953.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_lightcyan1, edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "hubCpG\nlightcyan1", "PCDF130", "child´s\nsex", "PCDF130*\nchild´s sex", "birthweight", "mother´s\nBMI\nbefore\npregnancy", "CD4T", "B-cells"), edge.label.position = .6, edge.width = .6, node.width = 1.7, curve = 2)
+
+l_pcdf130_red <- parameterEstimates(model_pcdf130_cg18901378.fit.YB)[c(1:13, 17:21, 23:26, 28:30, 32:33, 35), ]
+l_pcdf130_red
+b_pcdf130_red <- gettextf('%s %.2f p=%.2f', l_pcdf130_red$label, l_pcdf130_red$est, digits = l_pcdf130_red$pvalue)
+b_pcdf130_red <- gsub(".*p=NA.*", "", b_pcdf130_red)
+b_pcdf130_red <- gsub("w", "*sex", b_pcdf130_red)
+b_pcdf130_red
+semPaths(model_pcdf130_cg18901378.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_cg18901378.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_red, edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "hubCpG\nred", "PCDF130", "child´s\nsex", "PCDF130*\nchild´s sex", "birthweight", "mother´s\nBMI\nbefore\npregnancy", "EPIC\narray\nplate"), edge.label.position = .6, edge.width = .6, node.width = 1.7, curve = 2)
+
+l_pcdf130_salmon <- parameterEstimates(model_pcdf130_cg01733928.fit.YB)[c(1:17, 21:27, 29:34, 36:40, 42:45, 47:49, 51:52, 54), ]
+l_pcdf130_salmon
+b_pcdf130_salmon <- gettextf('%s %.2f p=%.2f', l_pcdf130_salmon$label, l_pcdf130_salmon$est, digits = l_pcdf130_salmon$pvalue)
+b_pcdf130_salmon <- gsub(".*p=NA.*", "", b_pcdf130_salmon)
+b_pcdf130_salmon <- gsub("w", "*sex", b_pcdf130_salmon)
+b_pcdf130_salmon
+semPaths(model_pcdf130_cg01733928.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_cg01733928.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_salmon, edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "hubCpG\nsalmon", "PCDF130", "child´s\nsex", "PCDF130*\nchild´s sex", "birthweight", "mother´s\nBMI\nbefore\npregnancy", "mother´s\nage\nat birth", "Bcells", "EPIC\narray\nplate"), edge.label.position = .6, edge.width = .6, node.width = 1.7, curve = 2)
+
+l_pcdf130_white <- parameterEstimates(model_pcdf130_cg10482044.fit.YB)[c(1:17, 21:27, 29:34, 36:40, 42:45, 47:49, 51:52, 54), ]
+l_pcdf130_white
+b_pcdf130_white <- gettextf('%s %.2f p=%.2f', l_pcdf130_white$label, l_pcdf130_white$est, digits = l_pcdf130_white$pvalue)
+b_pcdf130_white <- gsub(".*p=NA.*", "", b_pcdf130_white)
+b_pcdf130_white <- gsub("w", "*sex", b_pcdf130_white)
+b_pcdf130_white
+semPaths(model_pcdf130_cg10482044.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_cg10482044.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_white, edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "hubCpG\nwhite", "PCDF130", "child´s\nsex", "PCDF130*\nchild´s sex", "birthweight", "mother´s\nBMI\nbefore\npregnancy", "CD4T", "B-cells", "EPIC\narray\nplate"), edge.label.position = .6, edge.width = .6, node.width = 1.7, curve = 2)
+
+l_pcdf130_yellow <- parameterEstimates(model_pcdf130_cg09941484.fit.YB)[c(1:19, 23:30, 32:38, 40:45, 47:51, 53:56, 58:60, 62:63, 65), ]
+l_pcdf130_yellow
+b_pcdf130_yellow <- gettextf('%s %.2f p=%.2f', l_pcdf130_yellow$label, l_pcdf130_yellow$est, digits = l_pcdf130_yellow$pvalue)
+b_pcdf130_yellow <- gsub(".*p=NA.*", "", b_pcdf130_yellow)
+b_pcdf130_yellow <- gsub("w", "*sex", b_pcdf130_yellow)
+b_pcdf130_yellow
+semPaths(model_pcdf130_cg09941484.fit.YB, what= "path", whatLabels = "est", intercepts = FALSE, rotation = 2)
+semPaths(model_pcdf130_cg09941484.fit.YB, what = "path", whatLabels = "est", intercepts = FALSE, layout = "tree", rotation = 2, panelGroups = TRUE, edgeLabels = b_pcdf130_yellow, edge.label.bg = TRUE, edge.label.cex = .7, fade = FALSE, nodeLabels = c("child´s\ncognitive\nability", "hubCpG\nyellow", "PCDF130", "child´s\nsex", "PCDF130*\nchild´s sex", "birthweight", "mother´s\nBMI\nbefore\npregnancy", "CD4T", "granulocytes", "B-cells", "EPIC\narray\nplate"), edge.label.position = .6, edge.width = .6, node.width = 1.7, curve = 2)
+
+```
+
+# save
+
+```{r save}
+
+#save.image("path/mediation_WGCNA_IQ_image_N142_nonlog.RData")
+
+```

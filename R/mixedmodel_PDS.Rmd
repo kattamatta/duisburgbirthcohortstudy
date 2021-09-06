@@ -1,0 +1,546 @@
+---
+title: "mixedmodel_PDS_sexcombined_finalpretty"
+author: "Katharina Mattonet"
+date: "9 März 2021"
+output: html_document
+---
+# load libraries
+
+```{r load libraries}
+library(lavaan)
+library(semPlot)
+library(semTools)
+library(lattice)
+library(tidyr)
+library(lme4)
+library(nlme)
+library(ggplot2)
+library(mice)
+library(finalfit)
+library(multilevel)
+
+```
+
+# load data
+
+```{r load data}
+load(file = "path/PDS_AlterU6bisU11.RData")
+```
+
+# prepare data and analysis of missing data patterns
+
+```{r prepare data and NA patterns}
+# prepare data
+sub_data <- subset(PDS_Alter, select = c("D_StdNr", "Sex_Kind", "U6_PDS_K_mean", "U7_PDS_K_mean", "U8_PDS_K_mean", "U9_PDS_K_mean", "U10_PDS_K_mean", "U11_PDS_K_mean", "U6_PDS_K_Alter", "U7_PDS_K_Alter", "U8_PDS_K_Alter", "U9_PDS_K_Alter", "U10_PDS_K_Alter", "U11_PDS_K_Alter"))
+colnames(sub_data) <- c("D_StdNr", "sex", "PDS6", "PDS7", "PDS8", "PDS9", "PDS10", "PDS15", "agePDS6", "agePDS7", "agePDS8", "agePDS9", "agePDS10", "agePDS15")
+sub_data$sex <- as.character(sub_data$sex) # 2 = female, 1 =  male
+sub_data$sex <- as.character(ifelse(sub_data$sex == 2, 0, 1)) # 0 = female, 1 = male
+sub_data$D_StdNr <- as.character(sub_data$D_StdNr)
+
+sub_data <- sub_data[ !(sub_data$D_StdNr %in% c(45, 68, 77, 80, 127, 160, 162)), ] # remove items not matching a-priori inclusion criteria regarding DNAm data and EDC data
+
+## evaluate missing data paterns
+#ff_glimpse(sub_data) # summarises a data frame
+missing_plot(sub_data) # detecting patterns of missingness
+
+
+explanatory <- c("sex", "sex", "agePDS6", "agePDS7", "agePDS8", "agePDS9", "agePDS10", "agePDS15")
+dependent <- c("PDS6", "PDS7", "PDS8", "PDS9", "PDS10", "PDS15")
+#missing_pattern(sub_data, dependent, explanatory) #produces a table and a plot showing the pattern of missingness between variables
+#missing_pairs(sub_data, dependent, explanatory, showXAxisPlotLabels = FALSE)
+explanatory2 = c("sex", "agePDS6", "agePDS7", "agePDS8", "agePDS9", "agePDS10", "agePDS15", "PDS6", "PDS7", "PDS8", "PDS9", "PDS10")
+#missing_compare(sub_data, "PDS15", explanatory2, p_cont_para = "spearman", p_cat = "fisher")
+explanatory3 = c("sex", "agePDS6", "agePDS7", "agePDS8", "agePDS9", "agePDS10", "agePDS15", "PDS6", "PDS7", "PDS8", "PDS9", "PDS15")
+#missing_compare(sub_data, "PDS10", explanatory3, p_cont_para = "spearman", p_cat = "fisher")
+## PDS-outcome is missing conditional on PDS#-age -> missing at random (MAR) -> prediction allowed
+## partially differences in mean of boxplot -> missing at random (MAR) -> prediction allowed
+
+# remove samples with missing data at >= 4 time points of meausrment 
+sub_data <- sub_data[rowSums(is.na(sub_data[, c("PDS6", "PDS7", "PDS8", "PDS9", "PDS10",  "PDS15")])) < 4,] # romved samples with >= 4 time points of meausurment with missing data from U6:U15 
+sub_data <- sub_data[rowSums(is.na(sub_data[, c("agePDS6", "agePDS7", "agePDS8", "agePDS9", "agePDS10", "agePDS15")])) < 4,]
+
+# reevaluate missing data patern
+explanatory = c("sex", "agePDS6", "agePDS7", "agePDS8", "agePDS9", "agePDS10", "agePDS15")
+dependent = c("PDS6", "PDS7", "PDS8", "PDS9", "PDS10", "PDS15")
+#missing_pairs(sub_data, dependent, explanatory)
+
+# impute age 
+sub_data$agePDS6imp <- ifelse(is.na(sub_data$agePDS6), round(mean(sub_data$agePDS6, na.rm = TRUE), digits = 3), sub_data$agePDS6)
+sub_data$agePDS7imp <- ifelse(is.na(sub_data$agePDS7), round(mean(sub_data$agePDS7, na.rm = TRUE), digits = 3), sub_data$agePDS7)
+sub_data$agePDS8imp <- ifelse(is.na(sub_data$agePDS8), round(mean(sub_data$agePDS8, na.rm = TRUE), digits = 3), sub_data$agePDS8)
+sub_data$agePDS9imp <- ifelse(is.na(sub_data$agePDS9), round(mean(sub_data$agePDS9, na.rm = TRUE), digits = 3), sub_data$agePDS9)
+sub_data$agePDS10imp <- ifelse(is.na(sub_data$agePDS10), round(mean(sub_data$agePDS10, na.rm = TRUE), digits = 3), sub_data$agePDS10)
+sub_data$agePDS15imp <- ifelse(is.na(sub_data$agePDS15), round(mean(sub_data$agePDS15, na.rm = TRUE), digits = 3), sub_data$agePDS15)
+
+# check mean for variable tt
+mean(sub_data$agePDS6imp) # 7.5
+mean(sub_data$agePDS7imp) # 8.5
+mean(sub_data$agePDS8imp) # 9.5
+mean(sub_data$agePDS9imp) # 10.5
+mean(sub_data$agePDS10imp) # 11.5
+mean(sub_data$agePDS15imp) # 16.4
+
+matrix_age_imp <- matrix(data = NA, ncol = 6, nrow = 6)
+rownames(matrix_age_imp) <- c("PDS t0", "PDS t1", "PDS t2", "PDS t3", "PDS t4", "PDS t5")
+colnames(matrix_age_imp) <- c("observed age N", "observed age Mean", "observed age SD", "imputed age N", "imputed age Mean", "imputed age SD")
+
+matrix_age_imp[1,1] <- sum((is.na(sub_data$agePDS6) == FALSE))
+matrix_age_imp[1,2] <- round(mean(sub_data$agePDS6, na.rm = TRUE), digit = 2)
+matrix_age_imp[1,3] <- round(sd(sub_data$agePDS6, na.rm = TRUE), digit = 2)
+matrix_age_imp[1,4] <- sum((is.na(sub_data$agePDS6imp) == FALSE))
+matrix_age_imp[1,5] <- round(mean(sub_data$agePDS6imp, na.rm = TRUE), digit = 2)
+matrix_age_imp[1,6] <- round(sd(sub_data$agePDS6imp, na.rm = TRUE), digit = 2)
+
+matrix_age_imp[2,1] <- sum((is.na(sub_data$agePDS7) == FALSE))
+matrix_age_imp[2,2] <- round(mean(sub_data$agePDS7, na.rm = TRUE), digit = 2)
+matrix_age_imp[2,3] <- round(sd(sub_data$agePDS7, na.rm = TRUE), digit = 2)
+matrix_age_imp[2,4] <- sum((is.na(sub_data$agePDS7imp) == FALSE))
+matrix_age_imp[2,5] <- round(mean(sub_data$agePDS7imp, na.rm = TRUE), digit = 2)
+matrix_age_imp[2,6] <- round(sd(sub_data$agePDS7imp, na.rm = TRUE), digit = 2)
+
+matrix_age_imp[3,1] <- sum((is.na(sub_data$agePDS8) == FALSE))
+matrix_age_imp[3,2] <- round(mean(sub_data$agePDS8, na.rm = TRUE), digit = 2)
+matrix_age_imp[3,3] <- round(sd(sub_data$agePDS8, na.rm = TRUE), digit = 2)
+matrix_age_imp[3,4] <- sum((is.na(sub_data$agePDS8imp) == FALSE))
+matrix_age_imp[3,5] <- round(mean(sub_data$agePDS8imp, na.rm = TRUE), digit = 2)
+matrix_age_imp[3,6] <- round(sd(sub_data$agePDS8imp, na.rm = TRUE), digit = 2)
+
+matrix_age_imp[4,1] <- sum((is.na(sub_data$agePDS9) == FALSE))
+matrix_age_imp[4,2] <- round(mean(sub_data$agePDS9, na.rm = TRUE), digit = 2)
+matrix_age_imp[4,3] <- round(sd(sub_data$agePDS9, na.rm = TRUE), digit = 2)
+matrix_age_imp[4,4] <- sum((is.na(sub_data$agePDS9imp) == FALSE))
+matrix_age_imp[4,5] <- round(mean(sub_data$agePDS9imp, na.rm = TRUE), digit = 2)
+matrix_age_imp[4,6] <- round(sd(sub_data$agePDS9imp, na.rm = TRUE), digit = 2)
+
+matrix_age_imp[5,1] <- sum((is.na(sub_data$agePDS10) == FALSE))
+matrix_age_imp[5,2] <- round(mean(sub_data$agePDS10, na.rm = TRUE), digit = 2)
+matrix_age_imp[5,3] <- round(sd(sub_data$agePDS10, na.rm = TRUE), digit = 2)
+matrix_age_imp[5,4] <- sum((is.na(sub_data$agePDS10imp) == FALSE))
+matrix_age_imp[5,5] <- round(mean(sub_data$agePDS10imp, na.rm = TRUE), digit = 2)
+matrix_age_imp[5,6] <- round(sd(sub_data$agePDS10imp, na.rm = TRUE), digit = 2)
+
+matrix_age_imp[6,1] <- sum((is.na(sub_data$agePDS15) == FALSE))
+matrix_age_imp[6,2] <- round(mean(sub_data$agePDS15, na.rm = TRUE), digit = 2)
+matrix_age_imp[6,3] <- round(sd(sub_data$agePDS15, na.rm = TRUE), digit = 2)
+matrix_age_imp[6,4] <- sum((is.na(sub_data$agePDS15imp) == FALSE))
+matrix_age_imp[6,5] <- round(mean(sub_data$agePDS15imp, na.rm = TRUE), digit = 2)
+matrix_age_imp[6,6] <- round(sd(sub_data$agePDS15imp, na.rm = TRUE), digit = 2)
+
+#write.csv2(matrix_age_imp, file = "path/age_imp_N_M_SD.csv")
+
+
+sub_data$agePDS6imp_0 <- sub_data$agePDS6imp-sub_data$agePDS6imp
+sub_data$agePDS7imp_1 <- sub_data$agePDS7imp-sub_data$agePDS6imp
+sub_data$agePDS8imp_2 <- sub_data$agePDS8imp-sub_data$agePDS6imp
+sub_data$agePDS9imp_3 <- sub_data$agePDS9imp-sub_data$agePDS6imp
+sub_data$agePDS10imp_4 <- sub_data$agePDS10imp-sub_data$agePDS6imp
+sub_data$agePDS15imp_9 <- sub_data$agePDS15imp-sub_data$agePDS6imp
+
+# check mean for variable tt
+mean(sub_data$agePDS6imp_0) # 0
+mean(sub_data$agePDS7imp_1) # 1
+mean(sub_data$agePDS8imp_2) # 2
+mean(sub_data$agePDS9imp_3) # 3
+mean(sub_data$agePDS10imp_4) # 4
+mean(sub_data$agePDS15imp_9) # 9
+
+## data from wide to long format
+all_data_long <- gather(sub_data, key = "PDS_t", value = "PDS", PDS6, PDS7, PDS8, PDS9, PDS10, PDS15)
+all_data_long2 <- gather(sub_data, key = "age_2", value = "age_0imp", agePDS6imp_0, agePDS7imp_1, agePDS8imp_2, agePDS9imp_3, agePDS10imp_4, agePDS15imp_9)
+all_data_long3 <- gather(sub_data, key = "age_3", value = "age_trueimp", agePDS6imp, agePDS7imp, agePDS8imp, agePDS9imp, agePDS10imp, agePDS15imp)
+all_data_long4 <- gather(sub_data, key = "age_4", value = "age_true", agePDS6, agePDS7, agePDS8, agePDS9, agePDS10, agePDS15)
+all_data_long <- cbind(all_data_long[, c("D_StdNr", "sex", "PDS_t", "PDS")], all_data_long2[, "age_0imp"], all_data_long3[, "age_trueimp"], all_data_long4[, "age_true"])
+colnames(all_data_long)[5] <- "age_0imp"
+colnames(all_data_long)[6] <- "age_trueimp"
+colnames(all_data_long)[7] <- "age_true"
+all_data_long$t <- gsub(".*PDS", "", all_data_long$PDS_t)
+all_data_long$t <- as.numeric(all_data_long$t)
+all_data_long <- all_data_long[order(all_data_long$D_StdNr), ]
+tt <- rep(c(0:4, 9), length.out = nrow(all_data_long)) # code time points where PDS taken
+all_data_long$tt <- tt
+all_data_long_inclNA <- all_data_long
+
+```
+
+# plot data for inspection
+
+```{r plot data}
+# Smooth nonparametric trajectories superimposed on empirical growth plots
+xyplot(PDS ~ age_true | D_StdNr, data=all_data_long,
+        prepanel = function(x, y) prepanel.loess(x, y, family="gaussian"),
+      xlab = "t", ylab = "PDS",
+      panel = function(x, y) {
+      panel.xyplot(x, y)
+      panel.loess(x,y, family="gaussian") },
+      ylim=c(0, 4), as.table=T)
+
+
+# Fitted linear regression with ordinary least square (OLS) trajectories superimposed on the empirical growth plots
+xyplot(PDS ~ age_true | D_StdNr, data=all_data_long,
+        panel = function(x, y){
+    panel.xyplot(x, y)
+    panel.lmline(x, y)
+  }, ylim=c(0, 4), as.table=T)
+
+rcorr <- Hmisc::rcorr(as.matrix(sub_data[, c("PDS6", "PDS7", "PDS8", "PDS9", "PDS10", "PDS15", "sex")]))
+rcorr # sex corr with PDS9:PDS15
+
+acf(residuals(lm(all_data_long$PDS ~ all_data_long$age_true), retype="normalized"), main = "Autocorrelation of first order of the Level 1 residuals") # autocorrelation of first level
+cor <- cor(sub_data[, c("PDS6", "PDS7", "PDS8", "PDS9", "PDS10", "PDS15")], use = "pairwise.complete.obs")
+mean(c(cor["PDS6", "PDS7"], cor["PDS7", "PDS8"], cor["PDS8", "PDS9"], cor["PDS9", "PDS10"], cor["PDS10", "PDS15"])) # 0.5539081
+Hmisc::rcorr(all_data_long$PDS, all_data_long$sex) # sig
+summary(lm(all_data_long$PDS ~ all_data_long$sex)) # sig
+
+summary(lme(PDS ~ sex,
+                  data = all_data_long,
+                  method = "REML",
+                  random = ~ sex | D_StdNr, na.action = na.exclude)) # sig
+```
+
+# set seed
+
+```{r seed}
+set.seed(123)
+```
+
+# model selecetion NEW (old at the bottom)
+
+```{r model selection}
+
+set.seed(123)
+
+intercept <- gls(PDS ~ 1*sex,
+                 data = all_data_long,
+                 method = "ML",
+                 na.action = na.exclude)
+summary(intercept)
+
+randomIntercept <- lme(PDS ~ 1*sex, 
+                       data = all_data_long, 
+                       random = ~1|D_StdNr, method = "ML",
+                       na.action = na.exclude, 
+                       control = list(maxIter=10000, niterEM=10000))
+summary(randomIntercept)
+
+nonmixed_model <- gls(PDS ~ age_0imp*sex,
+                      data = all_data_long,
+                      method = "ML",
+                      na.action = na.exclude)
+
+mixed_model_e <- lme(PDS ~ age_0imp*sex, 
+                  data = all_data_long,
+                  random = ~ 1|D_StdNr, 
+                  method = "ML",
+                  na.action = na.exclude, 
+                  control=list(maxIter=10000, niterEM=10000))
+
+mixed_model <- lme(PDS ~ age_0imp*sex, 
+                  data = all_data_long,
+                  random = ~ age_0imp|D_StdNr, 
+                  method = "ML",
+                  na.action = na.exclude, 
+                  control=list(maxIter=10000, niterEM=10000))
+
+mixedAR_model <- lme(PDS ~ age_0imp*sex, 
+                  data = all_data_long,
+                  random = ~ age_0imp|D_StdNr, 
+                  method = "ML",
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  na.action = na.exclude, 
+                  control=list(maxIter=10000, niterEM=10000))
+
+model2_lme_lin_lm <- lme(PDS ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = list(D_StdNr = pdDiag(~ age_0imp)),
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+
+model2_lme_lin_lm_e <- lme(PDS ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = list(D_StdNr = pdDiag(~ 1)),
+                  correlation = corCAR1(value = .5, form = ~ 1 | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+
+model2_lme_lin_e <- lme(PDS ~ age_0imp+sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = list(D_StdNr = pdDiag(~ age_0imp)),
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+
+
+modelselecetion <- anova(intercept, randomIntercept, nonmixed_model, mixed_model_e, mixed_model, mixedAR_model, model2_lme_lin_lm, model2_lme_lin_e)
+modelselecetion
+
+#write.csv(modelselecetion, file = "path/modelselectionANOVA.csv")
+
+modelcomparison_randomeffect <- anova(model2_lme_lin_lm, model2_lme_lin_lm_e)
+modelcomparison_randomeffect
+
+#write.csv(modelcomparison_randomeffect, file = "path/modelselectionANOVA_randomeffects.csv")
+
+```
+
+# predict data with final model
+
+```{r predict data}
+#setseed!!!
+model2_lme_lin <- lme(PDS ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "REML",
+                  random = list(D_StdNr = pdDiag(~ age_0imp)),
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+summary(model2_lme_lin)
+intervals(model2_lme_lin, method = "boot", boot.type = c("norm", "basic", "perc"), nsim = 1000)
+
+all_data_long$PDS_predict <- predict(model2_lme_lin, newdata = all_data_long)
+
+slopePDS_f <- coef(model2_lme_lin)$age_0imp
+mean(slopePDS_f)
+slopePDS_m <- coef(model2_lme_lin)$age_0imp + coef(model2_lme_lin)$`age_0imp:sex1`
+mean(slopePDS_m)
+#interceptPDS_f <- coef(model2_lme_lin)$`(Intercept)`
+#interceptPDS_m <- coef(model2_lme_lin)$`(Intercept)` + coef(model2_lme_lin)$sex1
+
+# transpone data to wide format
+all_data_wide <- pivot_wider(all_data_long, names_from = "PDS_t", values_from = c("PDS", "PDS_predict", "age_trueimp", "age_0imp", "age_true", "tt", "t"))
+all_data_wide$slopePDS <- ifelse(all_data_wide$sex == 0, slopePDS_f, slopePDS_m)
+
+all_data_wide2 <- all_data_wide
+
+mean(all_data_wide$slopePDS)
+var(all_data_wide$slopePDS)
+sd(all_data_wide$slopePDS)
+
+all_data_wide$PDS_diffU15U6 <- all_data_wide$PDS_predict_PDS15-all_data_wide$PDS_predict_PDS6
+all_data_wide$ture_age_diffU15U16 <- all_data_wide$age_trueimp_PDS15-all_data_wide$age_trueimp_PDS6
+
+mean(all_data_wide$PDS_diffU15U6)
+var(all_data_wide$PDS_diffU15U6)
+sd(all_data_wide$PDS_diffU15U6)
+
+all_data_wide_f <- all_data_wide[all_data_wide$sex==0, ]
+mean(all_data_wide_f$PDS_diffU15U6)
+sd(all_data_wide_f$PDS_diffU15U6)
+mean(all_data_wide_f$slopePDS)
+
+all_data_wide_m <- all_data_wide[all_data_wide$sex==1, ]
+mean(all_data_wide_m$PDS_diffU15U6)
+sd(all_data_wide_m$PDS_diffU15U6)
+mean(all_data_wide_m$slopePDS)
+
+#save(all_data_wide, file = "path/predictedPDS.RData")
+
+```
+
+# plot results
+
+```{r plot results}
+# plot random effects
+plot(ranef(model2_lme_lin)) 
+
+# scatterplot fixed & random slopes
+ggplot2::ggplot(data = all_data_long, aes(x = (age_0imp+6), y = pred, group = D_StdNr, colour = sex)) +
+  geom_line(aes(x = (age_0imp+6), y = predict(model2_lme_lin), group = D_StdNr)) +
+  geom_line(data = all_data_long, aes(x = (age_0imp+6), y = predict(model2_lme_lin, level = 0, newdata = all_data_long), group = sex, linetype = sex), size = 1, color = "black") + 
+  xlab("age") + 
+  scale_x_continuous(breaks = seq(0,18,1)) +
+  ylab("PDS") + ylim(0,4) +
+  scale_color_discrete(name ="random effects (L1)",
+                          breaks=c(0,1),
+                          labels=c("girls", "boys")) +
+  scale_linetype_discrete(name ="fixed effects (L2)",
+                          breaks=c(0,1),
+                          labels=c("girls", "boys")) +
+  theme_classic() 
+
+ggplot2::ggplot(data = all_data_long, aes(x = age_0imp, y = pred, group = D_StdNr, colour = sex)) +
+  geom_line(aes(x = age_0imp, y = predict(model2_lme_lin), group = D_StdNr)) +
+  geom_line(data = all_data_long, aes(x = age_0imp, y = predict(model2_lme_lin, level = 0, newdata = all_data_long), group = sex, linetype = sex), size = 1, color = "black") + 
+  xlab("age-groupmean(age)") + 
+  scale_x_continuous(breaks = seq(0,10,1)) +
+  ylab("PDS") + ylim(0,4) +
+  scale_color_discrete(name ="random effects (L1)",
+                          breaks=c(0,1),
+                          labels=c("girls", "boys")) +
+  scale_linetype_discrete(name ="fixed effects (L2)",
+                          breaks=c(0,1),
+                          labels=c("girls", "boys")) +
+  theme_classic()
+
+# boxplot of estimated slopePDS & PDS_diffU15U6
+df1 <- subset(all_data_wide, select = c(2, 45))
+
+df1.1 <- data.frame(sex=c("All"),
+                  slopePDS=df1$slopePDS)
+df1 <- rbind(df1, df1.1)
+
+ggplot(df1, aes(sex, slopePDS)) +
+  geom_boxplot(outlier.shape = NA) +
+  scale_x_discrete(labels = c("female (N = 41)"," male (N = 41)", "all (N = 82)")) +
+  xlab("") +
+  ylab("sample´s predicted slope") +
+  theme_minimal()
+
+mean(all_data_wide_m$slopePDS)
+mean(all_data_wide_f$slopePDS)
+median(all_data_wide$slopePDS)
+
+df2 <- subset(all_data_wide, select = c(2, 46))
+
+df2.1 <- data.frame(sex=c("All"),
+                  PDS_diffU15U6=df2$PDS_diffU15U6)
+df2 <- rbind(df2, df2.1)
+
+ggplot(df2, aes(sex, PDS_diffU15U6)) +
+  geom_boxplot(outlier.shape = NA) +
+  scale_x_discrete(labels = c("female (N = 41)"," male (N = 41)", "all (N = 81)")) +
+  xlab("") +
+  ylab("sample´s predicted difference\nbetween baseline and last follow-up") +
+  theme_minimal()
+
+median(all_data_wide_m$PDS_diffU15U6)
+median(all_data_wide_f$PDS_diffU15U6)
+median(all_data_wide$PDS_diffU15U6)
+
+```
+
+# linear vs nonlinear model comparison
+
+```{r linear vs nonlinear model}
+set.seed(123)
+
+model2_lme_lin_lm <- lme(PDS ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = list(D_StdNr = pdDiag(~ age_0imp)),
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+
+model2_lme_quad_lmnointer <- lme(PDS ~ age_0imp*sex + I(age_0imp^2),
+                  data = all_data_long,
+                  method = "ML",
+                  random = list(D_StdNr = pdDiag(~ age_0imp + I(age_0imp^2))),
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+
+model2_lme_quad_lm <- lme(PDS ~ age_0imp*sex + I(age_0imp^2),
+                  data = all_data_long,
+                  method = "ML",
+                  random = ~ age_0imp + I(age_0imp^2) | D_StdNr,
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+
+anova(model2_lme_lin_lm, model2_lme_quad_lm)
+
+model2_lme_quadext_lm <- lme(PDS ~ age_0imp + (I(age_0imp^2))*sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = ~ age_0imp + I(age_0imp^2) | D_StdNr,
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+anova(model2_lme_quad_lm, model2_lme_quadext_lm)
+
+model2_lme_quadextext_lm <- lme(PDS ~ ((age_0imp + I(age_0imp^2))*sex),
+                  data = all_data_long,
+                  method = "ML",
+                  random = ~ age_0imp + I(age_0imp^2) | D_StdNr,
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+anova(model2_lme_quad_lm, model2_lme_quadextext_lm)
+
+modelselecetion_quad <- anova(model2_lme_lin_lm, model2_lme_quad_lm)
+modelselecetion_quad
+
+#write.csv(modelselecetion_quad, file = "path/modelselectionANOVA_linquad.csv")
+
+# scatterplot fixed & random slopes
+ggplot2::ggplot(data = all_data_long, aes(x = (age_0imp+6), y = pred, group = D_StdNr, colour = sex)) +
+  geom_line(aes(x = (age_0imp+6), y = predict(model2_lme_quad_lm), group = D_StdNr)) +
+  geom_line(data = all_data_long, aes(x = (age_0imp+6), y = predict(model2_lme_quad_lm, level = 0, newdata = all_data_long), group = sex, linetype = sex), size = 1, color = "black") + 
+  xlab("age") + 
+  scale_x_continuous(breaks = seq(0,18,1)) +
+  ylab("PDS") + ylim(0,4) +
+  scale_color_discrete(name ="random effects (L1)",
+                          breaks=c(0,1),
+                          labels=c("girls", "boys")) +
+  scale_linetype_discrete(name ="fixed effects (L2)",
+                          breaks=c(0,1),
+                          labels=c("girls", "boys")) +
+  theme_classic() 
+
+```
+
+
+# model selecetion OLD
+
+```{r model selection}
+
+set.seed(123)
+
+model1_lme_lin <- lme(PDS ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "REML",
+                  random = ~ age_0imp | D_StdNr,
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude) 
+AIC(model1_lme_lin) 
+summary(model1_lme_lin)
+intervals(model1_lme_lin, method = "boot", boot.type = c("norm", "basic", "perc"), nsim = 1000) 
+
+model2_lme_lin <- lme(PDS ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "REML",
+                  random = list(D_StdNr = pdDiag(~ age_0imp)),
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+#AIC(model2_lme_lin)
+summary(model2_lme_lin)
+intervals(model2_lme_lin, method = "boot", boot.type = c("norm", "basic", "perc"), nsim = 1000)
+#plot(model2_lme_lin)
+
+# with uncorrect distribution of Prüfgröße - only valid with lme(methode = "LM")!!!
+model1_lme_lin_ML <- lme(PDS ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = ~ age_0imp | D_StdNr,
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude) 
+model1_lme_lin_MLe <- lme(PDS ~ age_0imp+sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = ~ age_0imp | D_StdNr,
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude) 
+anova(model1_lme_lin_ML, model1_lme_lin_MLe)
+model2_lme_lin_ML <- lme(PDS ~ age_0imp*sex,
+                  data = all_data_long,
+                  method = "ML",
+                  random = list(D_StdNr = pdDiag(~ age_0imp)),
+                  correlation = corCAR1(value = .5, form = ~ age_0imp | D_StdNr),
+                  control=list(maxIter=10000, niterEM=10000),
+                  na.action = na.exclude)
+anova(model1_lme_lin_ML, model2_lme_lin_ML) # not sig -> use model2 since it is more restrictive
+
+# Deviance difference between models
+C2 <- round(((-2)*logLik(model2_lme_lin))-((-2)*logLik(model1_lme_lin)), digit = 6)
+# corrected Prüfgröße, df = 8 from more restrictive model
+.5*(pchisq(C2, df=8, lower.tail=F)) + .5*(pchisq(C2, df=8+1, lower.tail=F)) # 'log Lik.' 1 (df=8) ==  ns
+
+```

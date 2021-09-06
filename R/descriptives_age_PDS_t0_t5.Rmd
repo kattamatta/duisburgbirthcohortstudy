@@ -1,0 +1,584 @@
+---
+title: "descriptives_PDSU6U11_N82"
+author: "Katharina Mattonet"
+date: "8 Juni 2021"
+output: html_document
+---
+
+## load data
+
+```{r load data}
+
+load("path/PDS_item_U6U11_N82_final.RData")
+load("path/PDS_item_U6U11_N157_final.RData")
+load("path/PDS_AlterU6bisU11.RData")
+load("path/PDS_AlterU6bisU11_N82.RData")
+load("path/pheno_data_childBMI_N157.RData")
+
+```
+
+## libraries
+
+```{r libraries}
+
+library(psych)
+library(effectsize)
+library(ggplot2)
+library(ggsignif)
+library(tidyr)
+library(Hmisc)
+library(dplyr)
+
+```
+
+## descriptives PDS for data matching a priori criteria (N = 157)
+
+```{r descriptives}
+# age
+## all
+des_PDS_all_age <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_all_age) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_all_age) <- c("N", "M", "SD")
+
+des_PDS_all_age[1,1] <- sum((is.na(PDS_Alter$U6_PDS_K_Alter)==FALSE))
+des_PDS_all_age[1,2] <- round(mean(PDS_Alter$U6_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age[1,3] <- round(sd(PDS_Alter$U6_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_all_age[2,1] <- sum((is.na(PDS_Alter$U7_PDS_K_Alter)==FALSE))
+des_PDS_all_age[2,2] <- round(mean(PDS_Alter$U7_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age[2,3] <- round(sd(PDS_Alter$U7_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_all_age[3,1] <- sum((is.na(PDS_Alter$U8_PDS_K_Alter)==FALSE))
+des_PDS_all_age[3,2] <- round(mean(PDS_Alter$U8_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age[3,3] <- round(sd(PDS_Alter$U8_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_all_age[4,1] <- sum((is.na(PDS_Alter$U9_PDS_K_Alter)==FALSE))
+des_PDS_all_age[4,2] <- round(mean(PDS_Alter$U9_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age[4,3] <- round(sd(PDS_Alter$U9_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_all_age[5,1] <- sum((is.na(PDS_Alter$U10_PDS_K_Alter)==FALSE))
+des_PDS_all_age[5,2] <- paste(round(mean(PDS_Alter$U10_PDS_K_Alter, na.rm = T), digits = 2))
+des_PDS_all_age[5,3] <- paste(round(sd(PDS_Alter$U10_PDS_K_Alter, na.rm = T), digits = 2))
+
+des_PDS_all_age[6,1] <- sum((is.na(PDS_Alter$U11_PDS_K_Alter)==FALSE))
+des_PDS_all_age[6,2] <- round(mean(PDS_Alter$U11_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age[6,3] <- round(sd(PDS_Alter$U11_PDS_K_Alter, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_all_age, file = "path/descriptives_PDS_all_age_N157.csv")
+
+## female
+des_PDS_female_age <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_female_age) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_female_age) <- c("N", "M", "SD")
+
+PDS_Alter_female <- PDS_Alter[PDS_Alter$Sex_Kind == 2, ]
+
+des_PDS_female_age[1,1] <- sum(is.na(PDS_Alter_female$U6_PDS_K_Alter)==FALSE)
+des_PDS_female_age[1,2] <- round(mean(PDS_Alter_female$U6_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age[1,3] <- round(sd(PDS_Alter_female$U6_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_female_age[2,1] <- sum((is.na(PDS_Alter_female$U7_PDS_K_Alter)==FALSE))
+des_PDS_female_age[2,2] <- round(mean(PDS_Alter_female$U7_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age[2,3] <- round(sd(PDS_Alter_female$U7_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_female_age[3,1] <- sum((is.na(PDS_Alter_female$U8_PDS_K_Alter)==FALSE))
+des_PDS_female_age[3,2] <- round(mean(PDS_Alter_female$U8_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age[3,3] <- round(sd(PDS_Alter_female$U8_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_female_age[4,1] <- sum((is.na(PDS_Alter_female$U9_PDS_K_Alter)==FALSE))
+des_PDS_female_age[4,2] <- round(mean(PDS_Alter_female$U9_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age[4,3] <- round(sd(PDS_Alter_female$U9_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_female_age[5,1] <- sum((is.na(PDS_Alter_female$U10_PDS_K_Alter)==FALSE))
+des_PDS_female_age[5,2] <- paste(round(mean(PDS_Alter_female$U10_PDS_K_Alter, na.rm = T), digits = 2))
+des_PDS_female_age[5,3] <- paste(round(sd(PDS_Alter_female$U10_PDS_K_Alter, na.rm = T), digits = 2))
+
+des_PDS_female_age[6,1] <- sum((is.na(PDS_Alter_female$U11_PDS_K_Alter)==FALSE))
+des_PDS_female_age[6,2] <- round(mean(PDS_Alter_female$U11_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age[6,3] <- round(sd(PDS_Alter_female$U11_PDS_K_Alter, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_female_age, file = "path/descriptives_PDS_female_age_N157.csv")
+
+## male
+des_PDS_male_age <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_male_age) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_male_age) <- c("N", "M", "SD")
+
+PDS_Alter_male <- PDS_Alter[PDS_Alter$Sex_Kind == 1, ]
+
+des_PDS_male_age[1,1] <- sum(is.na(PDS_Alter_male$U6_PDS_K_Alter)==FALSE)
+des_PDS_male_age[1,2] <- round(mean(PDS_Alter_male$U6_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age[1,3] <- round(sd(PDS_Alter_male$U6_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_male_age[2,1] <- sum((is.na(PDS_Alter_male$U7_PDS_K_Alter)==FALSE))
+des_PDS_male_age[2,2] <- round(mean(PDS_Alter_male$U7_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age[2,3] <- round(sd(PDS_Alter_male$U7_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_male_age[3,1] <- sum((is.na(PDS_Alter_male$U8_PDS_K_Alter)==FALSE))
+des_PDS_male_age[3,2] <- round(mean(PDS_Alter_male$U8_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age[3,3] <- round(sd(PDS_Alter_male$U8_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_male_age[4,1] <- sum((is.na(PDS_Alter_male$U9_PDS_K_Alter)==FALSE))
+des_PDS_male_age[4,2] <- round(mean(PDS_Alter_male$U9_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age[4,3] <- round(sd(PDS_Alter_male$U9_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_male_age[5,1] <- sum((is.na(PDS_Alter_male$U10_PDS_K_Alter)==FALSE))
+des_PDS_male_age[5,2] <- paste(round(mean(PDS_Alter_male$U10_PDS_K_Alter, na.rm = T), digits = 2))
+des_PDS_male_age[5,3] <- paste(round(sd(PDS_Alter_male$U10_PDS_K_Alter, na.rm = T), digits = 2))
+
+des_PDS_male_age[6,1] <- sum((is.na(PDS_Alter_male$U11_PDS_K_Alter)==FALSE))
+des_PDS_male_age[6,2] <- round(mean(PDS_Alter_male$U11_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age[6,3] <- round(sd(PDS_Alter_male$U11_PDS_K_Alter, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_male_age, file = "path/descriptives_PDS_male_age_N157.csv")
+
+# PDS
+## all
+des_PDS_all_PDS <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_all_PDS) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_all_PDS) <- c("N", "Mean", "SD")
+
+des_PDS_all_PDS[1,1] <- sum((is.na(PDS_Alter$U6_PDS_K_mean)==FALSE))
+des_PDS_all_PDS[1,2] <- round(mean(PDS_Alter$U6_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS[1,3] <- round(sd(PDS_Alter$U6_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS[2,1] <- sum((is.na(PDS_Alter$U7_PDS_K_mean)==FALSE))
+des_PDS_all_PDS[2,2] <- round(mean(PDS_Alter$U7_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS[2,3] <- round(sd(PDS_Alter$U7_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS[3,1] <- sum((is.na(PDS_Alter$U8_PDS_K_mean)==FALSE))
+des_PDS_all_PDS[3,2] <- round(mean(PDS_Alter$U8_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS[3,3] <- round(sd(PDS_Alter$U8_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS[4,1] <- sum((is.na(PDS_Alter$U9_PDS_K_mean)==FALSE))
+des_PDS_all_PDS[4,2] <- round(mean(PDS_Alter$U9_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS[4,3] <- round(sd(PDS_Alter$U9_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS[5,1] <- sum((is.na(PDS_Alter$U10_PDS_K_mean)==FALSE))
+des_PDS_all_PDS[5,2] <- round(mean(PDS_Alter$U10_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS[5,3] <- round(sd(PDS_Alter$U10_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS[6,1] <- sum((is.na(PDS_Alter$U11_PDS_K_mean)==FALSE))
+des_PDS_all_PDS[6,2] <- round(mean(PDS_Alter$U11_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS[6,3] <- round(sd(PDS_Alter$U11_PDS_K_mean, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_all_PDS, file = "path/descriptives_PDS_all_PDS_N157.csv")
+
+## female
+des_PDS_female_PDS <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_female_PDS) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_female_PDS) <- c("N", "M", "SD")
+
+PDS_Alter_female <- PDS_Alter[PDS_Alter$Sex_Kind == 2, ]
+
+des_PDS_female_PDS[1,1] <- sum(is.na(PDS_Alter_female$U6_PDS_K_mean)==FALSE)
+des_PDS_female_PDS[1,2] <- round(mean(PDS_Alter_female$U6_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS[1,3] <- round(sd(PDS_Alter_female$U6_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_female_PDS[2,1] <- sum((is.na(PDS_Alter_female$U7_PDS_K_mean)==FALSE))
+des_PDS_female_PDS[2,2] <- round(mean(PDS_Alter_female$U7_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS[2,3] <- round(sd(PDS_Alter_female$U7_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_female_PDS[3,1] <- sum((is.na(PDS_Alter_female$U8_PDS_K_mean)==FALSE))
+des_PDS_female_PDS[3,2] <- round(mean(PDS_Alter_female$U8_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS[3,3] <- round(sd(PDS_Alter_female$U8_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_female_PDS[4,1] <- sum((is.na(PDS_Alter_female$U9_PDS_K_mean)==FALSE))
+des_PDS_female_PDS[4,2] <- round(mean(PDS_Alter_female$U9_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS[4,3] <- round(sd(PDS_Alter_female$U9_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_female_PDS[5,1] <- sum((is.na(PDS_Alter_female$U10_PDS_K_mean)==FALSE))
+des_PDS_female_PDS[5,2] <- paste(round(mean(PDS_Alter_female$U10_PDS_K_mean, na.rm = T), digits = 2))
+des_PDS_female_PDS[5,3] <- paste(round(sd(PDS_Alter_female$U10_PDS_K_mean, na.rm = T), digits = 2))
+
+des_PDS_female_PDS[6,1] <- sum((is.na(PDS_Alter_female$U11_PDS_K_mean)==FALSE))
+des_PDS_female_PDS[6,2] <- round(mean(PDS_Alter_female$U11_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS[6,3] <- round(sd(PDS_Alter_female$U11_PDS_K_mean, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_female_PDS, file = "path/descriptives_PDS_female_PDS_N157.csv")
+
+## male
+des_PDS_male_PDS <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_male_PDS) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_male_PDS) <- c("N", "M", "SD")
+
+PDS_Alter_male <- PDS_Alter[PDS_Alter$Sex_Kind == 1, ]
+
+des_PDS_male_PDS[1,1] <- sum(is.na(PDS_Alter_male$U6_PDS_K_mean)==FALSE)
+des_PDS_male_PDS[1,2] <- round(mean(PDS_Alter_male$U6_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS[1,3] <- round(sd(PDS_Alter_male$U6_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_male_PDS[2,1] <- sum((is.na(PDS_Alter_male$U7_PDS_K_mean)==FALSE))
+des_PDS_male_PDS[2,2] <- round(mean(PDS_Alter_male$U7_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS[2,3] <- round(sd(PDS_Alter_male$U7_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_male_PDS[3,1] <- sum((is.na(PDS_Alter_male$U8_PDS_K_mean)==FALSE))
+des_PDS_male_PDS[3,2] <- round(mean(PDS_Alter_male$U8_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS[3,3] <- round(sd(PDS_Alter_male$U8_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_male_PDS[4,1] <- sum((is.na(PDS_Alter_male$U9_PDS_K_mean)==FALSE))
+des_PDS_male_PDS[4,2] <- round(mean(PDS_Alter_male$U9_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS[4,3] <- round(sd(PDS_Alter_male$U9_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_male_PDS[5,1] <- sum((is.na(PDS_Alter_male$U10_PDS_K_mean)==FALSE))
+des_PDS_male_PDS[5,2] <- paste(round(mean(PDS_Alter_male$U10_PDS_K_mean, na.rm = T), digits = 2))
+des_PDS_male_PDS[5,3] <- paste(round(sd(PDS_Alter_male$U10_PDS_K_mean, na.rm = T), digits = 2))
+
+des_PDS_male_PDS[6,1] <- sum((is.na(PDS_Alter_male$U11_PDS_K_mean)==FALSE))
+des_PDS_male_PDS[6,2] <- round(mean(PDS_Alter_male$U11_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS[6,3] <- round(sd(PDS_Alter_male$U11_PDS_K_mean, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_male_PDS, file = "path/descriptives_PDS_male_PDS_N157.csv")
+```
+
+## descriptives PDS for data matching a priori criteria (N = 82)
+
+```{r descriptives}
+# age
+## all
+des_PDS_all_age_N82 <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_all_age_N82) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_all_age_N82) <- c("N", "M", "SD")
+
+des_PDS_all_age_N82[1,1] <- sum((is.na(PDS_Alter_N82$U6_PDS_K_Alter)==FALSE))
+des_PDS_all_age_N82[1,2] <- round(mean(PDS_Alter_N82$U6_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age_N82[1,3] <- round(sd(PDS_Alter_N82$U6_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_all_age_N82[2,1] <- sum((is.na(PDS_Alter_N82$U7_PDS_K_Alter)==FALSE))
+des_PDS_all_age_N82[2,2] <- round(mean(PDS_Alter_N82$U7_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age_N82[2,3] <- round(sd(PDS_Alter_N82$U7_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_all_age_N82[3,1] <- sum((is.na(PDS_Alter_N82$U8_PDS_K_Alter)==FALSE))
+des_PDS_all_age_N82[3,2] <- round(mean(PDS_Alter_N82$U8_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age_N82[3,3] <- round(sd(PDS_Alter_N82$U8_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_all_age_N82[4,1] <- sum((is.na(PDS_Alter_N82$U9_PDS_K_Alter)==FALSE))
+des_PDS_all_age_N82[4,2] <- round(mean(PDS_Alter_N82$U9_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age_N82[4,3] <- round(sd(PDS_Alter_N82$U9_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_all_age_N82[5,1] <- sum((is.na(PDS_Alter_N82$U10_PDS_K_Alter)==FALSE))
+des_PDS_all_age_N82[5,2] <- paste(round(mean(PDS_Alter_N82$U10_PDS_K_Alter, na.rm = T), digits = 2))
+des_PDS_all_age_N82[5,3] <- paste(round(sd(PDS_Alter_N82$U10_PDS_K_Alter, na.rm = T), digits = 2))
+
+des_PDS_all_age_N82[6,1] <- sum((is.na(PDS_Alter_N82$U11_PDS_K_Alter)==FALSE))
+des_PDS_all_age_N82[6,2] <- round(mean(PDS_Alter_N82$U11_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_all_age_N82[6,3] <- round(sd(PDS_Alter_N82$U11_PDS_K_Alter, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_all_age_N82, file = "path/descriptives_PDS_all_age_N82.csv")
+
+## female
+des_PDS_female_age_N82 <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_female_age_N82) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_female_age_N82) <- c("N", "M", "SD")
+
+PDS_Alter_female_N82 <- PDS_Alter_N82[PDS_Alter_N82$Sex_Kind == 2, ]
+
+des_PDS_female_age_N82[1,1] <- sum(is.na(PDS_Alter_female_N82$U6_PDS_K_Alter)==FALSE)
+des_PDS_female_age_N82[1,2] <- round(mean(PDS_Alter_female_N82$U6_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age_N82[1,3] <- round(sd(PDS_Alter_female_N82$U6_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_female_age_N82[2,1] <- sum((is.na(PDS_Alter_female_N82$U7_PDS_K_Alter)==FALSE))
+des_PDS_female_age_N82[2,2] <- round(mean(PDS_Alter_female_N82$U7_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age_N82[2,3] <- round(sd(PDS_Alter_female_N82$U7_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_female_age_N82[3,1] <- sum((is.na(PDS_Alter_female_N82$U8_PDS_K_Alter)==FALSE))
+des_PDS_female_age_N82[3,2] <- round(mean(PDS_Alter_female_N82$U8_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age_N82[3,3] <- round(sd(PDS_Alter_female_N82$U8_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_female_age_N82[4,1] <- sum((is.na(PDS_Alter_female_N82$U9_PDS_K_Alter)==FALSE))
+des_PDS_female_age_N82[4,2] <- round(mean(PDS_Alter_female_N82$U9_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age_N82[4,3] <- round(sd(PDS_Alter_female_N82$U9_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_female_age_N82[5,1] <- sum((is.na(PDS_Alter_female_N82$U10_PDS_K_Alter)==FALSE))
+des_PDS_female_age_N82[5,2] <- paste(round(mean(PDS_Alter_female_N82$U10_PDS_K_Alter, na.rm = T), digits = 2))
+des_PDS_female_age_N82[5,3] <- paste(round(sd(PDS_Alter_female_N82$U10_PDS_K_Alter, na.rm = T), digits = 2))
+
+des_PDS_female_age_N82[6,1] <- sum((is.na(PDS_Alter_female_N82$U11_PDS_K_Alter)==FALSE))
+des_PDS_female_age_N82[6,2] <- round(mean(PDS_Alter_female_N82$U11_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_female_age_N82[6,3] <- round(sd(PDS_Alter_female_N82$U11_PDS_K_Alter, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_female_age_N82, file = "path/descriptives_PDS_female_age_N82.csv")
+
+## male
+des_PDS_male_age_N82 <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_male_age_N82) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_male_age_N82) <- c("N", "M", "SD")
+
+PDS_Alter_male_N82 <- PDS_Alter_N82[PDS_Alter_N82$Sex_Kind == 1, ]
+
+des_PDS_male_age_N82[1,1] <- sum(is.na(PDS_Alter_male_N82$U6_PDS_K_Alter)==FALSE)
+des_PDS_male_age_N82[1,2] <- round(mean(PDS_Alter_male_N82$U6_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age_N82[1,3] <- round(sd(PDS_Alter_male_N82$U6_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_male_age_N82[2,1] <- sum((is.na(PDS_Alter_male_N82$U7_PDS_K_Alter)==FALSE))
+des_PDS_male_age_N82[2,2] <- round(mean(PDS_Alter_male_N82$U7_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age_N82[2,3] <- round(sd(PDS_Alter_male_N82$U7_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_male_age_N82[3,1] <- sum((is.na(PDS_Alter_male_N82$U8_PDS_K_Alter)==FALSE))
+des_PDS_male_age_N82[3,2] <- round(mean(PDS_Alter_male_N82$U8_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age_N82[3,3] <- round(sd(PDS_Alter_male_N82$U8_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_male_age_N82[4,1] <- sum((is.na(PDS_Alter_male_N82$U9_PDS_K_Alter)==FALSE))
+des_PDS_male_age_N82[4,2] <- round(mean(PDS_Alter_male_N82$U9_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age_N82[4,3] <- round(sd(PDS_Alter_male_N82$U9_PDS_K_Alter, na.rm = T), digits = 2)
+
+des_PDS_male_age_N82[5,1] <- sum((is.na(PDS_Alter_male_N82$U10_PDS_K_Alter)==FALSE))
+des_PDS_male_age_N82[5,2] <- paste(round(mean(PDS_Alter_male_N82$U10_PDS_K_Alter, na.rm = T), digits = 2))
+des_PDS_male_age_N82[5,3] <- paste(round(sd(PDS_Alter_male_N82$U10_PDS_K_Alter, na.rm = T), digits = 2))
+
+des_PDS_male_age_N82[6,1] <- sum((is.na(PDS_Alter_male_N82$U11_PDS_K_Alter)==FALSE))
+des_PDS_male_age_N82[6,2] <- round(mean(PDS_Alter_male_N82$U11_PDS_K_Alter, na.rm = T), digits = 2)
+des_PDS_male_age_N82[6,3] <- round(sd(PDS_Alter_male_N82$U11_PDS_K_Alter, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_male_age_N82, file = "path/descriptives_PDS_male_age_N82.csv")
+
+# PDS
+## all
+des_PDS_all_PDS_N82 <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_all_PDS_N82) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_all_PDS_N82) <- c("N", "Mean", "SD")
+
+des_PDS_all_PDS_N82[1,1] <- sum((is.na(PDS_Alter_N82$U6_PDS_K_mean)==FALSE))
+des_PDS_all_PDS_N82[1,2] <- round(mean(PDS_Alter_N82$U6_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS_N82[1,3] <- round(sd(PDS_Alter_N82$U6_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS_N82[2,1] <- sum((is.na(PDS_Alter_N82$U7_PDS_K_mean)==FALSE))
+des_PDS_all_PDS_N82[2,2] <- round(mean(PDS_Alter_N82$U7_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS_N82[2,3] <- round(sd(PDS_Alter_N82$U7_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS_N82[3,1] <- sum((is.na(PDS_Alter_N82$U8_PDS_K_mean)==FALSE))
+des_PDS_all_PDS_N82[3,2] <- round(mean(PDS_Alter_N82$U8_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS_N82[3,3] <- round(sd(PDS_Alter_N82$U8_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS_N82[4,1] <- sum((is.na(PDS_Alter_N82$U9_PDS_K_mean)==FALSE))
+des_PDS_all_PDS_N82[4,2] <- round(mean(PDS_Alter_N82$U9_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS_N82[4,3] <- round(sd(PDS_Alter_N82$U9_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS_N82[5,1] <- sum((is.na(PDS_Alter_N82$U10_PDS_K_mean)==FALSE))
+des_PDS_all_PDS_N82[5,2] <- round(mean(PDS_Alter_N82$U10_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS_N82[5,3] <- round(sd(PDS_Alter_N82$U10_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_all_PDS_N82[6,1] <- sum((is.na(PDS_Alter_N82$U11_PDS_K_mean)==FALSE))
+des_PDS_all_PDS_N82[6,2] <- round(mean(PDS_Alter_N82$U11_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_all_PDS_N82[6,3] <- round(sd(PDS_Alter_N82$U11_PDS_K_mean, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_all_PDS_N82, file = "path/descriptives_PDS_all_PDS_N82.csv")
+
+## female
+des_PDS_female_PDS_N82 <- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_female_PDS_N82) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_female_PDS_N82) <- c("N", "M", "SD")
+
+PDS_Alter_female_N82 <- PDS_Alter_N82[PDS_Alter_N82$Sex_Kind == 2, ]
+
+des_PDS_female_PDS_N82[1,1] <- sum(is.na(PDS_Alter_female_N82$U6_PDS_K_mean)==FALSE)
+des_PDS_female_PDS_N82[1,2] <- round(mean(PDS_Alter_female_N82$U6_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS_N82[1,3] <- round(sd(PDS_Alter_female_N82$U6_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_female_PDS_N82[2,1] <- sum((is.na(PDS_Alter_female_N82$U7_PDS_K_mean)==FALSE))
+des_PDS_female_PDS_N82[2,2] <- round(mean(PDS_Alter_female_N82$U7_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS_N82[2,3] <- round(sd(PDS_Alter_female_N82$U7_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_female_PDS_N82[3,1] <- sum((is.na(PDS_Alter_female_N82$U8_PDS_K_mean)==FALSE))
+des_PDS_female_PDS_N82[3,2] <- round(mean(PDS_Alter_female_N82$U8_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS_N82[3,3] <- round(sd(PDS_Alter_female_N82$U8_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_female_PDS_N82[4,1] <- sum((is.na(PDS_Alter_female_N82$U9_PDS_K_mean)==FALSE))
+des_PDS_female_PDS_N82[4,2] <- round(mean(PDS_Alter_female_N82$U9_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS_N82[4,3] <- round(sd(PDS_Alter_female_N82$U9_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_female_PDS_N82[5,1] <- sum((is.na(PDS_Alter_female_N82$U10_PDS_K_mean)==FALSE))
+des_PDS_female_PDS_N82[5,2] <- paste(round(mean(PDS_Alter_female_N82$U10_PDS_K_mean, na.rm = T), digits = 2))
+des_PDS_female_PDS_N82[5,3] <- paste(round(sd(PDS_Alter_female_N82$U10_PDS_K_mean, na.rm = T), digits = 2))
+
+des_PDS_female_PDS_N82[6,1] <- sum((is.na(PDS_Alter_female_N82$U11_PDS_K_mean)==FALSE))
+des_PDS_female_PDS_N82[6,2] <- round(mean(PDS_Alter_female_N82$U11_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_female_PDS_N82[6,3] <- round(sd(PDS_Alter_female_N82$U11_PDS_K_mean, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_female_PDS_N82, file = "path/descriptives_PDS_female_PDS_N82.csv")
+
+## male
+des_PDS_male_PDS_N82<- matrix(data = NA, ncol = 3, nrow = 6)
+rownames(des_PDS_male_PDS_N82) <- c("Baseline (U6)", "First follow-up (U7)", "Second follow-up (U8)", "Third follow-up (U9)", "Fourth follow-up (U10)", "Fifth follow-up (U11)")
+colnames(des_PDS_male_PDS_N82) <- c("N", "M", "SD")
+
+PDS_Alter_male_N82 <- PDS_Alter_N82[PDS_Alter_N82$Sex_Kind == 1, ]
+
+des_PDS_male_PDS_N82[1,1] <- sum(is.na(PDS_Alter_male_N82$U6_PDS_K_mean)==FALSE)
+des_PDS_male_PDS_N82[1,2] <- round(mean(PDS_Alter_male_N82$U6_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS_N82[1,3] <- round(sd(PDS_Alter_male_N82$U6_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_male_PDS_N82[2,1] <- sum((is.na(PDS_Alter_male_N82$U7_PDS_K_mean)==FALSE))
+des_PDS_male_PDS_N82[2,2] <- round(mean(PDS_Alter_male_N82$U7_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS_N82[2,3] <- round(sd(PDS_Alter_male_N82$U7_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_male_PDS_N82[3,1] <- sum((is.na(PDS_Alter_male_N82$U8_PDS_K_mean)==FALSE))
+des_PDS_male_PDS_N82[3,2] <- round(mean(PDS_Alter_male_N82$U8_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS_N82[3,3] <- round(sd(PDS_Alter_male_N82$U8_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_male_PDS_N82[4,1] <- sum((is.na(PDS_Alter_male_N82$U9_PDS_K_mean)==FALSE))
+des_PDS_male_PDS_N82[4,2] <- round(mean(PDS_Alter_male_N82$U9_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS_N82[4,3] <- round(sd(PDS_Alter_male_N82$U9_PDS_K_mean, na.rm = T), digits = 2)
+
+des_PDS_male_PDS_N82[5,1] <- sum((is.na(PDS_Alter_male_N82$U10_PDS_K_mean)==FALSE))
+des_PDS_male_PDS_N82[5,2] <- paste(round(mean(PDS_Alter_male_N82$U10_PDS_K_mean, na.rm = T), digits = 2))
+des_PDS_male_PDS_N82[5,3] <- paste(round(sd(PDS_Alter_male_N82$U10_PDS_K_mean, na.rm = T), digits = 2))
+
+des_PDS_male_PDS_N82[6,1] <- sum((is.na(PDS_Alter_male_N82$U11_PDS_K_mean)==FALSE))
+des_PDS_male_PDS_N82[6,2] <- round(mean(PDS_Alter_male_N82$U11_PDS_K_mean, na.rm = T), digits = 2)
+des_PDS_male_PDS_N82[6,3] <- round(sd(PDS_Alter_male_N82$U11_PDS_K_mean, na.rm = T), digits = 2)
+
+#write.csv2(des_PDS_male_PDS_N82, file = "path/descriptives_PDS_male_PDS_N82.csv")
+```
+
+# t-test for diff in age and PDS between subjects at given time of assessment
+
+```{r t-test}
+# N157
+## age
+t.test(PDS_Alter$U6_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U6_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U7_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U7_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U8_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U8_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U9_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U9_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U10_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U10_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U11_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U11_PDS_K_Alter ~ PDS_Alter$Sex_Kind, na.rm = T)
+
+## PDs
+t.test(PDS_Alter$U6_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U6_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U7_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U7_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U8_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter$U8_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U9_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T) #sig
+cohens_d(PDS_Alter$U9_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U10_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T) #sig
+cohens_d(PDS_Alter$U10_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T)
+t.test(PDS_Alter$U11_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T) #sig
+cohens_d(PDS_Alter$U11_PDS_K_mean ~ PDS_Alter$Sex_Kind, na.rm = T)
+
+
+# N82
+## age
+t.test(PDS_Alter_N82$U6_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U6_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U7_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U7_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U8_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U8_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U9_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U9_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U10_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U10_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U11_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U11_PDS_K_Alter ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+
+## PDs
+t.test(PDS_Alter_N82$U6_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U6_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U7_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U7_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U8_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #ns
+cohens_d(PDS_Alter_N82$U8_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U9_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #sig
+cohens_d(PDS_Alter_N82$U9_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U10_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #sig
+cohens_d(PDS_Alter_N82$U10_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+t.test(PDS_Alter_N82$U11_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T) #sig
+cohens_d(PDS_Alter_N82$U11_PDS_K_mean ~ PDS_Alter_N82$Sex_Kind, na.rm = T)
+```
+
+## t-test for diff in BMI by sex at given PDS measurment
+
+```{r t-test BMI ~ sex}
+
+t.test(pheno_data_N157$bmi_u6 ~ pheno_data_N157$sex_n, na.rm = T) # not sig
+cohens_d(pheno_data_N157$bmi_u6 ~ pheno_data_N157$sex_n, na.rm = T)
+
+t.test(pheno_data_N157$bmi_u7 ~ pheno_data_N157$sex_n, na.rm = T) # sig!!!
+cohens_d(pheno_data_N157$bmi_u7 ~ pheno_data_N157$sex_n, na.rm = T)
+
+t.test(pheno_data_N157$bmi_u8 ~ pheno_data_N157$sex_n, na.rm = T) # not sig
+cohens_d(pheno_data_N157$bmi_u8 ~ pheno_data_N157$sex_n, na.rm = T)
+
+t.test(pheno_data_N157$bmi_u9 ~ pheno_data_N157$sex_n, na.rm = T) # not sig
+cohens_d(pheno_data_N157$bmi_u9 ~ pheno_data_N157$sex_n, na.rm = T)
+
+t.test(pheno_data_N157$bmi_u10 ~ pheno_data_N157$sex_n, na.rm = T) # not sig
+cohens_d(pheno_data_N157$bmi_u10 ~ pheno_data_N157$sex_n, na.rm = T)
+
+t.test(pheno_data_N157$bmi_u11 ~ pheno_data_N157$sex_n, na.rm = T) # not sig
+cohens_d(pheno_data_N157$bmi_u11 ~ pheno_data_N157$sex_n, na.rm = T)
+
+```
+
+## correlations BMI & PDS score at given measurment occasion
+
+```{r cor BMI & PDS}
+
+subset_bmi <- subset(pheno_data_N157, select = c(D_StdNr, bmi_u6, bmi_u7, bmi_u8, bmi_u9, bmi_u10, bmi_u11))
+
+subset_pds <- subset(PDS_Alter_N82, select = c(D_StdNr, U6_PDS_K_mean, U7_PDS_K_mean, U8_PDS_K_mean, U9_PDS_K_mean, U10_PDS_K_mean, U11_PDS_K_mean))
+
+corrdf_data <- left_join(subset_pds, subset_bmi, by = "D_StdNr")
+corrdf_data$D_StdNr <- NULL
+
+corrtable <- rcorr(as.matrix(corrdf_data), type = "spearman")
+corrtable$r
+corrtable$P
+
+```
+
+
+## plot
+
+```{r plot}
+# N157
+df <- subset(PDS_Alter, select = -c(1:2, 4:9))
+df$Sex_Kind <- as.character(df$Sex_Kind)
+df$Sex_Kind <- as.character(ifelse(df$Sex_Kind == 2, 0, 1))
+df <- reshape::melt(df, id.var = "Sex_Kind")
+
+boxplot_N157 <- ggplot(df, aes(x = variable, y = value)) +
+  geom_boxplot(aes(color = Sex_Kind), outlier.shape = NA) +
+  ylim(1,4.5) +
+  scale_color_discrete(name="sex", labels=c("girls", "boys")) +
+  geom_signif(
+    y_position = c(1.2, 1.2, 1.2, 2.2, 2.4, 4.2), xmin = c(0.8, 1.8, 2.8, 3.8, 4.8, 5.8), xmax = c(1.2, 2.2, 3.2, 4.2, 5.2, 6.2),
+    annotation = c("ns", "ns", "ns", "**", "**", "**"), tip_length = 0
+  ) +
+  scale_x_discrete(labels = c("7.5", "8.5", "9.5", "10.5", "11.5", "16.5")) +
+  xlab("mean age (years)") +
+  ylab("PDS score") +
+  theme_minimal()
+boxplot_N157
+
+# N82
+df_N82 <- subset(PDS_Alter_N82, select = -c(1:2, 4:9))
+df_N82$Sex_Kind <- as.character(df_N82$Sex_Kind)
+df_N82$Sex_Kind <- as.character(ifelse(df_N82$Sex_Kind == 2, 0, 1))
+df_N82 <- reshape::melt(df_N82, id.var = "Sex_Kind")
+
+boxplot_N82 <- ggplot(df_N82, aes(x = variable, y = value)) +
+  geom_boxplot(aes(color = Sex_Kind), outlier.shape = NA) +
+  ylim(1,4.5) +
+  scale_color_discrete(name="sex", labels=c("girls", "boys")) +
+  geom_signif(
+    y_position = c(1.2, 1.2, 1.2, 2.2, 2.4, 4.2), xmin = c(0.8, 1.8, 2.8, 3.8, 4.8, 5.8), xmax = c(1.2, 2.2, 3.2, 4.2, 5.2, 6.2),
+    annotation = c("ns", "ns", "ns", "**", "**", "**"), tip_length = 0
+  ) +
+  scale_x_discrete(labels = c("7.5", "8.5", "9.5", "10.5", "11.5", "16.5")) +
+  xlab("mean age (years)") +
+  ylab("PDS score") +
+  theme_minimal()
+
+boxplot_N82
+
+```
+

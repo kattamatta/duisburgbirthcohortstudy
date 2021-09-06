@@ -1,0 +1,286 @@
+---
+title: "BMI at PDS time points"
+author: "Vanessa Vogel"
+date: "7 7 2021"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preparations
+```{r preparations}
+load("path/pheno_data_childBMI_N142.RData")
+load("path/pheno_data_childBMI_N157.RData")
+library(car)
+library(psych)
+girls_N157 <- subset(pheno_data_N157, pheno_data_N157$sex_n == 0)
+boys_N157 <- subset(pheno_data_N157, pheno_data_N157$sex_n == 1)
+girls_N142 <- subset(pheno_data_N142, pheno_data_N142$sex_n == 0)
+boys_N142 <- subset(pheno_data_N142, pheno_data_N142$sex_n == 1)
+```
+
+## N 157 U6
+```{r N 157 U6}
+describe(pheno_data_N157$bmi_u6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N157$bmi_u6, na.rm = TRUE)
+geometric.mean(pheno_data_N157$bmi_u6)
+quantile(pheno_data_N157$bmi_u6, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 157 u7
+```{r N 157 u7}
+describe(pheno_data_N157$bmi_u7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N157$bmi_u7, na.rm = TRUE)
+geometric.mean(pheno_data_N157$bmi_u7)
+quantile(pheno_data_N157$bmi_u7, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 157 u8
+```{r N 157 u8}
+describe(pheno_data_N157$bmi_u8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N157$bmi_u8, na.rm = TRUE)
+geometric.mean(pheno_data_N157$bmi_u8)
+quantile(pheno_data_N157$bmi_u8, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
+## N 157 u9
+```{r N 157 u9}
+describe(pheno_data_N157$bmi_u9, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N157$bmi_u9, na.rm = TRUE)
+geometric.mean(pheno_data_N157$bmi_u9)
+quantile(pheno_data_N157$bmi_u9, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 157 u10
+```{r N 157 u10}
+describe(pheno_data_N157$bmi_u10, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N157$bmi_u10, na.rm = TRUE)
+geometric.mean(pheno_data_N157$bmi_u10)
+quantile(pheno_data_N157$bmi_u10, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 157 u11
+```{r N 157 u11}
+describe(pheno_data_N157$bmi_u11, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N157$bmi_u11, na.rm = TRUE)
+geometric.mean(pheno_data_N157$bmi_u11)
+quantile(pheno_data_N157$bmi_u11, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 142 U6
+```{r N 142 U6}
+describe(pheno_data_N142$bmi_u6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N142$bmi_u6, na.rm = TRUE)
+geometric.mean(pheno_data_N142$bmi_u6)
+quantile(pheno_data_N142$bmi_u6, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 142 u7
+```{r N 142 u7}
+describe(pheno_data_N142$bmi_u7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N142$bmi_u7, na.rm = TRUE)
+geometric.mean(pheno_data_N142$bmi_u7)
+quantile(pheno_data_N142$bmi_u7, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 142 u8
+```{r N 142 u8}
+describe(pheno_data_N142$bmi_u8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N142$bmi_u8, na.rm = TRUE)
+geometric.mean(pheno_data_N142$bmi_u8)
+quantile(pheno_data_N142$bmi_u8, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
+## N 142 u9
+```{r N 142 u9}
+describe(pheno_data_N142$bmi_u9, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N142$bmi_u9, na.rm = TRUE)
+geometric.mean(pheno_data_N142$bmi_u9)
+quantile(pheno_data_N142$bmi_u9, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 142 u10
+```{r N 142 u10}
+describe(pheno_data_N142$bmi_u10, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N142$bmi_u10, na.rm = TRUE)
+geometric.mean(pheno_data_N142$bmi_u10)
+quantile(pheno_data_N142$bmi_u10, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N 142 u11
+```{r N 142 u11}
+describe(pheno_data_N142$bmi_u11, skew = FALSE) #sample size, mean, sd, min, max, range
+median(pheno_data_N142$bmi_u11, na.rm = TRUE)
+geometric.mean(pheno_data_N142$bmi_u11)
+quantile(pheno_data_N142$bmi_u11, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
+## N157 girls U6
+```{r N157 girls U6}
+describe(girls_N157$bmi_u6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N157$bmi_u6, na.rm = TRUE)
+geometric.mean(girls_N157$bmi_u6)
+quantile(girls_N157$bmi_u6, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N157 girls u7
+```{r N157 girls u7}
+describe(girls_N157$bmi_u7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N157$bmi_u7, na.rm = TRUE)
+geometric.mean(girls_N157$bmi_u7)
+quantile(girls_N157$bmi_u7, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N157 girls u8
+```{r N157 girls u8}
+describe(girls_N157$bmi_u8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N157$bmi_u8, na.rm = TRUE)
+geometric.mean(girls_N157$bmi_u8)
+quantile(girls_N157$bmi_u8, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
+## N157 girls u9
+```{r N157 girls u9}
+describe(girls_N157$bmi_u9, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N157$bmi_u9, na.rm = TRUE)
+geometric.mean(girls_N157$bmi_u9)
+quantile(girls_N157$bmi_u9, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N157 girls u10
+```{r N157 girls u10}
+describe(girls_N157$bmi_u10, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N157$bmi_u10, na.rm = TRUE)
+geometric.mean(girls_N157$bmi_u10)
+quantile(girls_N157$bmi_u10, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N157 girls u11
+```{r N157 girls u11}
+describe(girls_N157$bmi_u11, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N157$bmi_u11, na.rm = TRUE)
+geometric.mean(girls_N157$bmi_u11)
+quantile(girls_N157$bmi_u11, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 girls U6
+```{r N142 girls U6}
+describe(girls_N142$bmi_u6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N142$bmi_u6, na.rm = TRUE)
+geometric.mean(girls_N142$bmi_u6)
+quantile(girls_N142$bmi_u6, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 girls u7
+```{r N142 girls u7}
+describe(girls_N142$bmi_u7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N142$bmi_u7, na.rm = TRUE)
+geometric.mean(girls_N142$bmi_u7)
+quantile(girls_N142$bmi_u7, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 girls u8
+```{r N142 girls u8}
+describe(girls_N142$bmi_u8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N142$bmi_u8, na.rm = TRUE)
+geometric.mean(girls_N142$bmi_u8)
+quantile(girls_N142$bmi_u8, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
+## N142 girls u9
+```{r N142 girls u9}
+describe(girls_N142$bmi_u9, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N142$bmi_u9, na.rm = TRUE)
+geometric.mean(girls_N142$bmi_u9)
+quantile(girls_N142$bmi_u9, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 girls u10
+```{r N142 girls u10}
+describe(girls_N142$bmi_u10, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N142$bmi_u10, na.rm = TRUE)
+geometric.mean(girls_N142$bmi_u10)
+quantile(girls_N142$bmi_u10, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 girls u11
+```{r N142 girls u11}
+describe(girls_N142$bmi_u11, skew = FALSE) #sample size, mean, sd, min, max, range
+median(girls_N142$bmi_u11, na.rm = TRUE)
+geometric.mean(girls_N142$bmi_u11)
+quantile(girls_N142$bmi_u11, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
+## N157 boys U6
+```{r N157 boys U6}
+describe(boys_N157$bmi_u6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N157$bmi_u6, na.rm = TRUE)
+geometric.mean(boys_N157$bmi_u6)
+quantile(boys_N157$bmi_u6, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N157 boys u7
+```{r N157 boys u7}
+describe(boys_N157$bmi_u7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N157$bmi_u7, na.rm = TRUE)
+geometric.mean(boys_N157$bmi_u7)
+quantile(boys_N157$bmi_u7, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N157 boys u8
+```{r N157 boys u8}
+describe(boys_N157$bmi_u8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N157$bmi_u8, na.rm = TRUE)
+geometric.mean(boys_N157$bmi_u8)
+quantile(boys_N157$bmi_u8, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
+## N157 boys u9
+```{r N157 boys u9}
+describe(boys_N157$bmi_u9, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N157$bmi_u9, na.rm = TRUE)
+geometric.mean(boys_N157$bmi_u9)
+quantile(boys_N157$bmi_u9, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N157 boys u10
+```{r N157 boys u10}
+describe(boys_N157$bmi_u10, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N157$bmi_u10, na.rm = TRUE)
+geometric.mean(boys_N157$bmi_u10)
+quantile(boys_N157$bmi_u10, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N157 boys u11
+```{r N157 boys u11}
+describe(boys_N157$bmi_u11, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N157$bmi_u11, na.rm = TRUE)
+geometric.mean(boys_N157$bmi_u11)
+quantile(boys_N157$bmi_u11, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 boys U6
+```{r N142 boys U6}
+describe(boys_N142$bmi_u6, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N142$bmi_u6, na.rm = TRUE)
+geometric.mean(boys_N142$bmi_u6)
+quantile(boys_N142$bmi_u6, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 boys u7
+```{r N142 boys u7}
+describe(boys_N142$bmi_u7, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N142$bmi_u7, na.rm = TRUE)
+geometric.mean(boys_N142$bmi_u7)
+quantile(boys_N142$bmi_u7, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 boys u8
+```{r N142 boys u8}
+describe(boys_N142$bmi_u8, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N142$bmi_u8, na.rm = TRUE)
+geometric.mean(boys_N142$bmi_u8)
+quantile(boys_N142$bmi_u8, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
+## N142 boys u9
+```{r N142 boys u9}
+describe(boys_N142$bmi_u9, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N142$bmi_u9, na.rm = TRUE)
+geometric.mean(boys_N142$bmi_u9)
+quantile(boys_N142$bmi_u9, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 boys u10
+```{r N142 boys u10}
+describe(boys_N142$bmi_u10, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N142$bmi_u10, na.rm = TRUE)
+geometric.mean(boys_N142$bmi_u10)
+quantile(boys_N142$bmi_u10, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+## N142 boys u11
+```{r N142 boys u11}
+describe(boys_N142$bmi_u11, skew = FALSE) #sample size, mean, sd, min, max, range
+median(boys_N142$bmi_u11, na.rm = TRUE)
+geometric.mean(boys_N142$bmi_u11)
+quantile(boys_N142$bmi_u11, na.rm = TRUE, c(.05, .95)) # 5th and 95th percentile
+```
+
